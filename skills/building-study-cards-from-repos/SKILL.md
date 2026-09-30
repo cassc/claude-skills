@@ -57,7 +57,7 @@ slide, a request trace, and PlantUML/Structurizr images.
 |---|---|
 | `cards.js` | `LESSONS` - cards + qa per lesson; optional `job`/`entry`/`uses` build the module map slide |
 | `quiz.js` | `QUIZ` - multiple choice per lesson id |
-| `diagrams.js` | `DIAGRAMS` - ordered steps, image optional |
+| `diagrams.js` | `DIAGRAMS` - ordered steps; image or text drawing optional |
 | `ask_prompt.md` / `quiz_prompt.md` | Claude's rules per chat mode |
 | `extra-cards.json` | cards the learner approved from chat; commit it |
 | `history.js` | History button: the newest 30 chats, kept in the browser |

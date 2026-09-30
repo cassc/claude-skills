@@ -109,11 +109,12 @@ function render() {
 }
 
 function renderDiagram(s, card) {
-  const src = s.d.img && `../${s.d.img}`, cur = s.d.steps[s.step];
+  const src = s.d.img && `../${s.d.img}`, art = !src && s.d.art, cur = s.d.steps[s.step];
   card.innerHTML = `<h2>${s.d.t}</h2>
-    <div class="dia${src ? "" : " noimg"}">${src ? `<a href="${src}" target="_blank" title="Open full size"><img src="${src}" alt="${s.d.img} diagram"></a>` : ""}
+    <div class="dia${src || art ? "" : " noimg"}">${src ? `<a href="${src}" target="_blank" title="Open full size"><img src="${src}" alt="${s.d.img} diagram"></a>` : ""}${art ? '<pre class="art"></pre>' : ""}
     <div><ol class="steps">${s.d.steps.map((x, n) => `<li data-n="${n}" class="${n === s.step ? "on" : n < s.step ? "done" : ""}">${x.s}${x.loop ? ' <span class="loop">loop</span>' : ""}</li>`).join("")}</ol>
     <p class="note">${cur.n || "&nbsp;"}</p></div></div>`;
+  if (art) card.querySelector(".art").textContent = art;
 }
 
 function renderMap(card) {

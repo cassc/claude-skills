@@ -52,22 +52,42 @@ library.
 - One `DIAGRAMS` entry under `"00"`, 5-9 steps in order.
 - `s` = what happens. `n` = why it happens here, plus
   `<code>path/file.ext:12-30</code>`.
-- `img` is optional. With no image the step list is the whole slide.
+- `img` and `art` are optional. With neither, the step list is the whole
+  slide.
 
 ## Diagram images
-Use an image only when it helps. Try in this order:
+Use a drawing only when it helps. Try in this order and stop at the first
+that works:
 1. **Reuse** what the repo has: images, `.puml` files, a Structurizr
    `workspace.dsl`.
-2. **PlantUML**, if `plantuml` is installed. Write the source into
-   `<web folder>/diagrams/` and render it next to itself:
-   `plantuml -tsvg learn/diagrams/*.puml`. Make a component diagram for the
-   architecture lesson and a sequence diagram for the request trace.
-3. **Structurizr**, only if the repo has a `workspace.dsl` or
-   `structurizr-cli` is installed: export to PlantUML
-   (`structurizr-cli export -workspace workspace.dsl -format plantuml -output learn/diagrams`),
-   then render as in step 2.
-4. **No tool**: no image. Say nothing; the map slide and step lists still
-   work.
+2. **Local tool**: check which is installed (`command -v`) and use the first
+   one found. Write the source into `<web folder>/diagrams/` and render it
+   next to itself. Prefer SVG; PNG only if the tool cannot make SVG.
+   - PlantUML: `plantuml -tsvg learn/diagrams/*.puml`
+   - Graphviz: `dot -Tsvg learn/diagrams/architecture.dot -o learn/diagrams/architecture.svg`
+   - Mermaid CLI: `mmdc -i learn/diagrams/architecture.mmd -o learn/diagrams/architecture.svg`
+     (labels missing in the page: render to `.png`)
+   - D2: `d2 learn/diagrams/architecture.d2 learn/diagrams/architecture.svg`
+   - Structurizr CLI, with a `workspace.dsl`: export to PlantUML
+     (`structurizr-cli export -workspace workspace.dsl -format plantuml -output learn/diagrams`),
+     then render with PlantUML.
+
+   Make a box diagram for the architecture lesson, and a sequence diagram
+   for the request trace if the tool has one.
+3. **SVG you write yourself**, when no tool is installed. Save it in
+   `<web folder>/diagrams/`.
+   - Boxes, arrows, and short labels only. Put the boxes on a simple grid.
+   - Each label fits inside its box.
+   - No scripts, no links, no outside fonts or images.
+   - Dark lines and text on a light background (the page shows images on
+     white).
+   - Open the slide and look at it. Fix overlaps.
+4. **ASCII drawing**, when you cannot view the SVG to check it, or it still
+   looks wrong after two fixes. Put it in the `art` field of the diagram
+   entry: plain characters only, at most about 60 columns and 20 lines. The
+   page shows `art` only when there is no `img`.
+5. **Nothing**, when a drawing would not help. Say nothing; the map slide
+   and step lists still work.
 
 Rules:
 - Never install a tool, pull a Docker image, or send code to a public render
