@@ -31,10 +31,14 @@
     </div>
     <div id="log-ask" class="log"></div>
     <div id="log-quiz" class="log" hidden></div>
+    <div id="log-history" class="log" hidden></div>
     <form id="chat-form">
       <textarea id="msg" rows="3" placeholder="Ask a question about this card"></textarea>
       <div class="row">
-        <button type="button" id="chat-new">New chat</button>
+        <span>
+          <button type="button" id="chat-new">New chat</button>
+          <button type="button" id="chat-history">History</button>
+        </span>
         <button type="submit">Send</button>
       </div>
     </form>
@@ -53,6 +57,7 @@
 <script src="source.js"></script>
 <script src="app.js"></script>
 <script src="markdown.js"></script>
+<script src="history.js"></script>
 <script src="chat.js"></script>
 </body>
 </html>

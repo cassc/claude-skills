@@ -76,6 +76,9 @@ nav { display: flex; justify-content: space-between; align-items: center; margin
 .msg .tbl { margin-bottom: 8px; overflow-x: auto; white-space: normal; }
 .msg table { border-collapse: collapse; font-size: 13px; }
 .msg th, .msg td { border: 1px solid var(--line); padding: 3px 6px; text-align: left; }
+#chat-history.on { border-color: var(--accent); color: var(--accent); }
+.past { display: block; width: 100%; margin: 6px 0; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.past span { display: block; color: var(--muted); font-size: 12px; }
 code.ref { color: var(--accent); cursor: pointer; text-decoration: underline; }
 #src { width: min(900px, 94vw); height: 86vh; padding: 12px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; }
 #src[open] { display: flex; flex-direction: column; }

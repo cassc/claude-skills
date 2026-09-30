@@ -1,8 +1,8 @@
 const modes = {
-  ask: { sid: null, log: $("log-ask"), hint: "Ask a question about this card" },
-  quiz: { sid: null, log: $("log-quiz"), hint: "Type your answer, 'hint', 'skip', or 'stop'" },
+  ask: { sid: null, chat: null, log: $("log-ask"), hint: "Ask a question about this card" },
+  quiz: { sid: null, chat: null, log: $("log-quiz"), hint: "Type your answer, 'hint', 'skip', or 'stop'" },
 };
-let mode = "ask";
+let mode = "ask", pending = 0;
 
 function addMsg(log, text, cls) {
   const d = document.createElement("div");
@@ -43,53 +43,65 @@ function proposal(log, raw, target) {
   log.scrollTop = log.scrollHeight;
 }
 
+function showReply(log, el, reply, card) {
+  const block = reply.match(/```card\s*([\s\S]*?)```/);
+  el.innerHTML = markdown(reply.replace(/```card[\s\S]*?```/, "").trim());
+  linkRefs(el);
+  if (block) proposal(log, block[1], card);
+}
+
 async function send(message) {
-  const m = modes[mode], log = m.log, sel = $("lesson"), card = currentCard();
+  const at = mode, m = modes[at], log = m.log, sel = $("lesson"), card = currentCard();
   const wait = addMsg(log, "Claude is thinking...", "bot");
+  pending++;
   try {
     const r = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode, message, session_id: m.sid, card: card.text, lesson: sel.options[sel.selectedIndex].text }),
+      body: JSON.stringify({ mode: at, message, session_id: m.sid, card: card.text, lesson: sel.options[sel.selectedIndex].text }),
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || r.status);
     m.sid = data.session_id;
-    const block = data.reply.match(/```card\s*([\s\S]*?)```/);
-    wait.innerHTML = markdown(data.reply.replace(/```card[\s\S]*?```/, "").trim());
-    linkRefs(wait);
-    if (block) proposal(log, block[1], card);
+    showReply(log, wait, data.reply, card);
+    record(m, at, { who: "bot", text: data.reply, card: { lesson: card.lesson, type: card.type, index: card.index } });
   } catch (e) {
     wait.className = "msg err";
     wait.textContent = location.protocol === "file:"
       ? "Chat needs the server. Run: python3 server.py (in this folder), then open http://127.0.0.1:8765"
       : "Error: " + e.message;
   }
+  pending--;
 }
 
 function setMode(m) {
   mode = m;
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.mode === m));
-  for (const k in modes) modes[k].log.hidden = k !== m;
+  showHistory(false);
   $("msg").placeholder = modes[m].hint;
   if (m === "quiz" && !modes.quiz.log.children.length) send("start");
 }
 
 function newChat() {
-  modes[mode].sid = null;
+  if (pending) return;
+  modes[mode].sid = modes[mode].chat = null;
   modes[mode].log.innerHTML = "";
+  showHistory(false);
   if (mode === "quiz") send("start");
 }
 
 $("chat-toggle").onclick = () => { $("chat").hidden = !$("chat").hidden; };
 document.querySelectorAll(".tabs button").forEach((b) => { b.onclick = () => setMode(b.dataset.mode); });
 $("chat-new").onclick = newChat;
+$("chat-history").onclick = () => showHistory($("log-history").hidden);
 $("chat-form").onsubmit = (e) => {
   e.preventDefault();
   const text = $("msg").value.trim();
   if (!text) return;
   $("msg").value = "";
+  showHistory(false);
   addMsg(modes[mode].log, text, "me");
+  record(modes[mode], mode, { who: "me", text });
   send(text);
 };
 $("msg").addEventListener("keydown", (e) => {
