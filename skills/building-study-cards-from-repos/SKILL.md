@@ -51,7 +51,13 @@ No lessons or results to copy: find the topics yourself.
 - **Lesson** = one module or subsystem (auth, storage, request flow).
 - **First principle** = the problem the design must handle (concurrency,
   latency, failure, scale).
-- **Evidence** = `file:line`, a test, a benchmark, or a commit that shows why.
+- **Evidence** = code, a test, a benchmark, or a commit that shows why.
+- **Code references**: every concept card, likely-question answer, and quiz
+  `e` cites 1-2 places as `<code>src/auth/token.py:42-60</code>` (path from the
+  repo root, then a line or a range). The page makes these clickable: a popup
+  shows the file at those lines. Prefer a range that shows the whole idea (a
+  function, a check) over one line. Files under dot dirs or over 300 KB do
+  not open.
 - **Diagrams**: usually none; use a step list for one request or data flow.
 - **`{{SOURCES}}`**: core source dirs, README, ADRs/design docs. Not the whole
   repo on big codebases (chat gets slow).
@@ -66,11 +72,14 @@ No lessons or results to copy: find the topics yourself.
 | `diagrams.js` | `DIAGRAMS` - image + ordered steps |
 | `ask_prompt.md` / `quiz_prompt.md` | Claude's rules per chat mode |
 | `extra-cards.json` | cards the learner approved from chat; commit it |
-| `server.py` | static files, `/api/chat` (`claude -p --resume`, tools Read/Grep/Glob), `/api/cards` |
+| `source.js` | makes `<code>path:line</code>` clickable; popup shows the file |
+| `server.py` | static files, `/api/chat` (`claude -p --resume`, tools Read/Grep/Glob), `/api/cards`, `/api/source` (read-only repo files for the popup) |
 
 ## Verify
 - `node -e` eval the three data files; every `a < o.length`.
 - Open the page: step through one lesson, one diagram (Space), finish the quiz.
+- Code references: each one names a real file and lines that exist. Click
+  one: the popup opens at the marked lines.
 - Ask mode: one question on a card; a suggestion shows Replace/Add buttons.
 - Quiz mode: first question is a "why" question.
 - Reset `extra-cards.json` to `[]` after test saves.
@@ -84,3 +93,4 @@ No lessons or results to copy: find the topics yourself.
 | Serving the whole repo for images | Only dirs in `ASSETS`; never repo root (.env) |
 | Giving Claude write tools to edit cards | Claude proposes; the learner clicks; server writes |
 | Old server still running after edits | Prompts load at start: restart it |
+| Code changed, references point at the wrong lines | Re-check the line numbers when the code moves |

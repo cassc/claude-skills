@@ -21,4 +21,7 @@ Rules:
 - If the learner says "skip", give the model answer and move on.
 - After 5 questions, or when the learner says "stop", give a short summary:
   score, weak topics, and which lesson to re-read.
+- When a model answer comes from code, cite it in backticks as
+  `path/file.ext:12` or `path/file.ext:12-30` (path from the repo root). The
+  learner can click it to see the code.
 - Never edit files. Keep replies short. No emojis.

@@ -63,6 +63,16 @@ nav { display: flex; justify-content: space-between; align-items: center; margin
 .msg .tbl { overflow-x: auto; white-space: normal; }
 .msg table { border-collapse: collapse; font-size: 13px; }
 .msg th, .msg td { border: 1px solid var(--line); padding: 3px 6px; text-align: left; }
+code.ref { color: var(--accent); cursor: pointer; text-decoration: underline; }
+#src { width: min(900px, 94vw); height: 86vh; padding: 12px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; }
+#src[open] { display: flex; flex-direction: column; }
+#src::backdrop { background: rgba(0, 0, 0, .45); }
+#src .row { margin: 0 0 8px; align-items: center; gap: 12px; }
+#src-title { color: var(--accent); font-family: monospace; overflow-wrap: anywhere; }
+#src-code { flex: 1; min-height: 0; margin: 0; padding: 8px 0; overflow: auto; background: var(--code); border-radius: 8px; font-size: 13px; line-height: 1.45; counter-reset: ln; }
+#src-code span { display: block; width: max-content; min-width: 100%; padding-right: 12px; counter-increment: ln; }
+#src-code span::before { content: counter(ln); display: inline-block; width: 5ch; margin-right: 12px; text-align: right; color: var(--muted); user-select: none; }
+#src-code span.hit { background: color-mix(in srgb, var(--accent) 25%, transparent); }
 textarea { width: 100%; resize: vertical; }
 .row { display: flex; justify-content: space-between; margin-top: 8px; }
 @media (max-width: 800px) {

@@ -14,6 +14,7 @@ function addMsg(log, text, cls) {
 }
 
 const bold = (el) => { el.innerHTML = el.innerHTML.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>"); };
+const code = (el) => { el.innerHTML = el.innerHTML.replace(/`([^`\n]+)`/g, "<code>$1</code>"); };
 
 const tables = (el) => {
   const tr = (row, tag) => "<tr>" + row.trim().replace(/^\||\|$/g, "").split("|")
@@ -46,6 +47,7 @@ function proposal(log, raw, target) {
     };
     box.appendChild(b);
   };
+  linkRefs(box);
   if (!target.lesson) return;
   if (c.replace && target.type === type) save(target.index, "Replace this card");
   save(null, "Add as new card");
@@ -67,8 +69,10 @@ async function send(message) {
     m.sid = data.session_id;
     const block = data.reply.match(/```card\s*([\s\S]*?)```/);
     wait.textContent = data.reply.replace(/```card[\s\S]*?```/, "").trim();
+    code(wait);
     bold(wait);
     tables(wait);
+    linkRefs(wait);
     if (block) proposal(log, block[1], card);
   } catch (e) {
     wait.className = "msg err";

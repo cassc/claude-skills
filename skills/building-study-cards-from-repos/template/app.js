@@ -100,6 +100,7 @@ function render() {
   } else if (s.kind === "Diagram") renderDiagram(s, card);
   else if (s.kind === "Quiz") renderQuiz(s, card);
   else renderResult(card);
+  linkRefs(card);
   store.set("pos:" + $("lesson").value, i);
 }
 
@@ -144,7 +145,7 @@ $("card").addEventListener("click", (e) => {
 $("prev").onclick = () => go(-1);
 $("next").onclick = () => go(1);
 document.addEventListener("keydown", (e) => {
-  if (e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+  if (e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT" || $("src").open) return;
   if (e.key === "ArrowRight") go(1);
   else if (e.key === "ArrowLeft") go(-1);
   else if (e.key === " " && slides[i].kind === "Likely question") {

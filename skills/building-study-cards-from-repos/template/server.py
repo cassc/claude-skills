@@ -7,6 +7,7 @@ import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 HOST, PORT = "127.0.0.1", int(os.environ.get("PORT", 8765))
 WEB = Path(__file__).parent
@@ -14,7 +15,9 @@ ROOT = WEB.parent
 EXTRA = WEB / "extra-cards.json"
 PROMPTS = {m: (WEB / f"{m}_prompt.md").read_text() for m in ("ask", "quiz")}
 ORIGINS = {f"http://{HOST}:{PORT}", f"http://localhost:{PORT}"}
+HOSTS = {o.split("//")[1] for o in ORIGINS}
 ASSETS = set()  # repo-relative image dirs the page may load
+MAX_SOURCE = 300_000  # bytes; larger files are not shown in the source popup
 SESSION = re.compile(r"^[0-9a-f-]{36}$")
 FIELDS = {"cards": ("t", "b"), "qa": ("q", "a")}
 lock = threading.Lock()
@@ -61,12 +64,39 @@ def save_card(body: dict) -> dict:
     return {"ok": True}
 
 
+def source(path: str) -> bytes:
+    file = (ROOT / path).resolve()
+    rel = file.relative_to(ROOT.resolve())  # ValueError if outside the repo
+    if any(p.startswith(".") for p in rel.parts) or not file.is_file() or file.stat().st_size > MAX_SOURCE:
+        raise ValueError("bad path")
+    data = file.read_bytes()
+    data.decode()  # binary files raise UnicodeDecodeError, a ValueError
+    return data
+
+
 class Handler(SimpleHTTPRequestHandler):
     def translate_path(self, path):
         rel = Path(path.split("?")[0].lstrip("/"))
         if str(rel.parent) in ASSETS and rel.name not in ("", ".", ".."):
             return str(ROOT / rel.parent / rel.name)
         return super().translate_path(path)
+
+    def do_GET(self):
+        url = urlsplit(self.path)
+        if url.path != "/api/source":
+            return super().do_GET()
+        if self.headers.get("Host") not in HOSTS:
+            return self.send_error(403, "bad host")
+        try:
+            data = source(parse_qs(url.query).get("path", [""])[0])
+        except (ValueError, OSError):
+            return self.send_error(404)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def do_POST(self):
         route = {"/api/chat": chat, "/api/cards": save_card}.get(self.path)
