@@ -22,7 +22,8 @@ lock = threading.Lock()
 
 def ask_claude(message: str, mode: str, session_id: str | None) -> dict:
     cmd = ["claude", "-p", "--output-format", "json", "--append-system-prompt", PROMPTS[mode],
-           "--tools", "Read,Grep,Glob", "--strict-mcp-config"]
+           "--tools", "Read,Grep,Glob", "--strict-mcp-config",
+           "--permission-mode", "dontAsk", "--disallowedTools", "Read(**/.env)", "Read(**/.env.*)"]
     if session_id:
         cmd += ["--resume", session_id]
     out = subprocess.run(cmd, input=message, cwd=ROOT, capture_output=True, text=True, timeout=300)
@@ -63,7 +64,7 @@ def save_card(body: dict) -> dict:
 class Handler(SimpleHTTPRequestHandler):
     def translate_path(self, path):
         rel = Path(path.split("?")[0].lstrip("/"))
-        if str(rel.parent) in ASSETS:
+        if str(rel.parent) in ASSETS and rel.name not in ("", ".", ".."):
             return str(ROOT / rel.parent / rel.name)
         return super().translate_path(path)
 

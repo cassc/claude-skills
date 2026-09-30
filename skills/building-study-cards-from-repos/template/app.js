@@ -5,6 +5,24 @@ const store = {
 };
 
 let slides = [], i = 0, answers = {};
+const ALLOWED = new Set(["B", "I", "CODE", "BR", "OL", "UL", "LI"]);
+
+// Card text may come from Claude, which reads repo files: keep only simple tags, no attributes.
+function clean(html) {
+  const t = document.createElement("template");
+  t.innerHTML = html ?? "";
+  const walk = (node) => {
+    for (const c of [...node.childNodes]) {
+      if (c.nodeType === 1) {
+        walk(c);
+        if (ALLOWED.has(c.tagName)) [...c.attributes].forEach((a) => c.removeAttribute(a.name));
+        else c.replaceWith(...c.childNodes);
+      } else if (c.nodeType !== 3) c.remove();
+    }
+  };
+  walk(t.content);
+  return t.innerHTML;
+}
 const BASE = structuredClone(LESSONS);
 
 async function loadExtras() {
@@ -74,10 +92,10 @@ function render() {
   $("prev").disabled = i === 0;
   $("next").disabled = i === slides.length - 1;
   card.className = s.kind.split(" ")[0].toLowerCase();
-  if (s.type === "cards") card.innerHTML = `<h2>${s.t}</h2><div>${s.b}</div>`;
+  if (s.type === "cards") card.innerHTML = `<h2>${clean(s.t)}</h2><div>${clean(s.b)}</div>`;
   else if (s.kind === "Likely question") {
-    card.innerHTML = `<h2>${s.q}</h2>` + (s.shown
-      ? `<div class="answer">${s.a}</div>`
+    card.innerHTML = `<h2>${clean(s.q)}</h2>` + (s.shown
+      ? `<div class="answer">${clean(s.a)}</div>`
       : `<button class="reveal">Show answer (space)</button>`);
   } else if (s.kind === "Diagram") renderDiagram(s, card);
   else if (s.kind === "Quiz") renderQuiz(s, card);

@@ -22,7 +22,7 @@ function proposal(log, raw, target) {
   const data = type === "qa" ? { q: c.q, a: c.a } : { t: c.t, b: c.b };
   const box = document.createElement("div");
   box.className = "msg proposal";
-  box.innerHTML = `<p class="label">Suggested card</p><h3>${data.t || data.q}</h3><div>${data.b || data.a}</div>`;
+  box.innerHTML = `<p class="label">Suggested card</p><h3>${clean(data.t || data.q)}</h3><div>${clean(data.b || data.a)}</div>`;
   const save = (index, label) => {
     const b = document.createElement("button");
     b.textContent = label;
