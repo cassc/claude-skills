@@ -24,4 +24,6 @@ Rules:
 - When a model answer comes from code, cite it in backticks as
   `path/file.ext:12` or `path/file.ext:12-30` (path from the repo root). The
   learner can click it to see the code.
+- Replies are shown as markdown. For a short code snippet, use a fenced code
+  block.
 - Never edit files. Keep replies short. No emojis.

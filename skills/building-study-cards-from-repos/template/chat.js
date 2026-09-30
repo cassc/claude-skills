@@ -13,18 +13,6 @@ function addMsg(log, text, cls) {
   return d;
 }
 
-const bold = (el) => { el.innerHTML = el.innerHTML.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>"); };
-const code = (el) => { el.innerHTML = el.innerHTML.replace(/`([^`\n]+)`/g, "<code>$1</code>"); };
-
-const tables = (el) => {
-  const tr = (row, tag) => "<tr>" + row.trim().replace(/^\||\|$/g, "").split("|")
-    .map((c) => `<${tag}>${c.trim()}</${tag}>`).join("") + "</tr>";
-  el.innerHTML = el.innerHTML.replace(/^(\|.+\|[ \t]*\n\|[ :|-]*-[ :|-]*\|[ \t]*(?:\n\|.+\|[ \t]*)*)\n?/gm, (_, block) => {
-    const [head, , ...body] = block.split("\n");
-    return `<div class="tbl"><table>${tr(head, "th")}${body.map((r) => tr(r, "td")).join("")}</table></div>`;
-  });
-};
-
 function proposal(log, raw, target) {
   let c;
   try { c = JSON.parse(raw); } catch { return; }
@@ -68,10 +56,7 @@ async function send(message) {
     if (!r.ok) throw new Error(data.error || r.status);
     m.sid = data.session_id;
     const block = data.reply.match(/```card\s*([\s\S]*?)```/);
-    wait.textContent = data.reply.replace(/```card[\s\S]*?```/, "").trim();
-    code(wait);
-    bold(wait);
-    tables(wait);
+    wait.innerHTML = markdown(data.reply.replace(/```card[\s\S]*?```/, "").trim());
     linkRefs(wait);
     if (block) proposal(log, block[1], card);
   } catch (e) {

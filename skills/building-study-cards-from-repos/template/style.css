@@ -60,7 +60,15 @@ nav { display: flex; justify-content: space-between; align-items: center; margin
 .msg.me { background: var(--code); margin-left: 30px; }
 .msg.bot { border: 1px solid var(--line); margin-right: 20px; }
 .msg.err { color: var(--wrong); }
-.msg .tbl { overflow-x: auto; white-space: normal; }
+.msg p { margin: 0 0 8px; }
+.msg pre { margin: 0 0 8px; padding: 8px; overflow-x: auto; white-space: pre; background: var(--code); border-radius: 6px; font-size: 13px; line-height: 1.45; }
+.msg pre code { padding: 0; background: none; font-size: inherit; }
+.msg ul, .msg ol { margin: 0 0 8px; padding-left: 24px; }
+.msg h4, .msg h5, .msg h6 { margin: 10px 0 4px; font-size: 15px; }
+.msg hr { margin: 8px 0; border: 0; border-top: 1px solid var(--line); }
+.msg > :first-child { margin-top: 0; }
+.msg > :last-child { margin-bottom: 0; }
+.msg .tbl { margin-bottom: 8px; overflow-x: auto; white-space: normal; }
 .msg table { border-collapse: collapse; font-size: 13px; }
 .msg th, .msg td { border: 1px solid var(--line); padding: 3px 6px; text-align: left; }
 code.ref { color: var(--accent); cursor: pointer; text-decoration: underline; }

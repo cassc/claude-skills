@@ -7,7 +7,7 @@ function parseRef(text) {
 }
 
 function linkRefs(el) {
-  el.querySelectorAll("code").forEach((c) => { if (parseRef(c.textContent)) c.classList.add("ref"); });
+  el.querySelectorAll(":not(pre) > code").forEach((c) => { if (parseRef(c.textContent)) c.classList.add("ref"); });
 }
 
 async function showSource(ref) {
