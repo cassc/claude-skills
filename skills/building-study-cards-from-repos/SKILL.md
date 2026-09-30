@@ -62,7 +62,7 @@ slide, a request trace, and PlantUML/Structurizr images.
 | `extra-cards.json` | cards the learner approved from chat; commit it |
 | `history.js` | History button: the newest 30 chats, kept in the browser; resumes a waiting chat after a page reload |
 | `markdown.js` | renders chat replies: code blocks, inline code, bold, lists, tables |
-| `source.js` | makes `<code>path:line</code>` clickable; popup shows the file and a file list (Files button), and can open in a new tab |
+| `source.js` | makes `<code>path:line</code>` clickable; popup shows the file and a folding file tree (Files button), and can open in a new tab |
 | `server.py` | static files, `/api/chat` (`claude -p --resume`, tools Read/Grep/Glob; keeps each result by message id), `/api/cards`, `/api/files` and `/api/source` (read-only: repo files git does not ignore, for the popup) |
 
 ## Verify
@@ -70,8 +70,9 @@ slide, a request trace, and PlantUML/Structurizr images.
 - Open the page: step through one lesson, one diagram (Space), finish the quiz.
 - Code references: each one names a real file and lines that exist. Click
   one: the popup opens at the marked lines.
-- Files button: the popup lists the repo's files; the filter narrows the
-  list; a click opens a file.
+- Files button: the popup shows the repo's files as a tree; a click opens
+  or closes a folder, or opens a file; the filter shows a flat list of
+  matches.
 - Module map (if any): a jump button opens that lesson; an entry opens the
   popup.
 - Ask mode: one question on a card; a suggestion shows Replace/Add buttons.

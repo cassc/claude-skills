@@ -93,6 +93,11 @@ code.ref { color: var(--accent); cursor: pointer; text-decoration: underline; }
 #src-filter { font-size: 14px; }
 #src-files { flex: 1; overflow-y: auto; }
 #src-files button { display: block; width: 100%; padding: 2px 6px; border: 0; border-radius: 4px; background: none; text-align: left; font: 12px/1.5 monospace; overflow-wrap: anywhere; }
+#src-files .node { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#src-files .dir { font-weight: 600; }
+#src-files .dir::before { content: "\25B8"; display: inline-block; width: 14px; }
+#src-files .dir.open::before { content: "\25BE"; }
+#src-files .hint { margin: 2px 0; }
 #src-files button:hover { background: var(--code); }
 #src-files button.on { background: var(--accent); color: #fff; }
 #src-code { flex: 1; min-width: 0; min-height: 0; margin: 0; padding: 8px 0; overflow: auto; background: var(--code); border-radius: 8px; font-size: 13px; line-height: 1.45; counter-reset: ln; }
