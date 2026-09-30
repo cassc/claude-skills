@@ -46,6 +46,18 @@ Per lesson, in this order:
 
 Use plain, simple English and short sentences.
 
+## Source code repos
+No lessons or results to copy: find the topics yourself.
+- **Lesson** = one module or subsystem (auth, storage, request flow).
+- **First principle** = the problem the design must handle (concurrency,
+  latency, failure, scale).
+- **Evidence** = `file:line`, a test, a benchmark, or a commit that shows why.
+- **Diagrams**: usually none; use a step list for one request or data flow.
+- **`{{SOURCES}}`**: core source dirs, README, ADRs/design docs. Not the whole
+  repo on big codebases (chat gets slow).
+- **Quiz**: "what breaks if we remove X?", "why here and not in Y?".
+- Every "why" cites code or a commit. If the reason is a guess, the card says so.
+
 ## Quick reference
 | File | Role |
 |---|---|
