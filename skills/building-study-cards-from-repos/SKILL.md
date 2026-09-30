@@ -60,10 +60,10 @@ slide, a request trace, and PlantUML/Structurizr images.
 | `diagrams.js` | `DIAGRAMS` - ordered steps; image or text drawing optional |
 | `ask_prompt.md` / `quiz_prompt.md` | Claude's rules per chat mode |
 | `extra-cards.json` | cards the learner approved from chat; commit it |
-| `history.js` | History button: the newest 30 chats, kept in the browser |
+| `history.js` | History button: the newest 30 chats, kept in the browser; resumes a waiting chat after a page reload |
 | `markdown.js` | renders chat replies: code blocks, inline code, bold, lists, tables |
 | `source.js` | makes `<code>path:line</code>` clickable; popup shows the file and a file list (Files button), and can open in a new tab |
-| `server.py` | static files, `/api/chat` (`claude -p --resume`, tools Read/Grep/Glob), `/api/cards`, `/api/files` and `/api/source` (read-only: repo files git does not ignore, for the popup) |
+| `server.py` | static files, `/api/chat` (`claude -p --resume`, tools Read/Grep/Glob; keeps each result by message id), `/api/cards`, `/api/files` and `/api/source` (read-only: repo files git does not ignore, for the popup) |
 
 ## Verify
 - `node -e` eval the three data files; every `a < o.length`.
@@ -77,6 +77,8 @@ slide, a request trace, and PlantUML/Structurizr images.
 - Ask mode: one question on a card; a suggestion shows Replace/Add buttons.
 - Quiz mode: first question is a "why" question.
 - Drag the chat panel's left edge: the panel gets wider, the cards narrower.
+- Reload while Claude is thinking: the chat comes back and the reply arrives.
+- New chat while another chat waits: both replies arrive, each in its own chat.
 - History: reload the page, open History, open the chat: the reply is there.
 - Reset `extra-cards.json` to `[]` after test saves.
 

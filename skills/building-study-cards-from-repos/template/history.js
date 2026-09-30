@@ -1,4 +1,4 @@
-// Chat history, kept in this browser: the newest KEEP chats, each { id, mode, time, sid, msgs: [{ who, text, card }] }.
+// Chat history, kept in this browser: the newest KEEP chats, each { id, mode, time, sid, msgs: [{ who, text, card, job }] }.
 const KEEP = 30;
 
 function loadChats() {
@@ -7,27 +7,37 @@ function loadChats() {
   } catch { return []; }
 }
 
-function record(m, mode, msg) {
-  m.chat = m.chat || { id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, mode, time: Date.now(), msgs: [] };
-  m.chat.sid = m.sid;
-  m.chat.msgs.push(msg);
-  if (!m.chat.msgs.some((x) => x.who === "me")) return; // a quiz nobody answered is not kept
-  const chats = loadChats().filter((c) => c.id !== m.chat.id);
-  chats.unshift(m.chat);
+function save(chat) {
+  if (!chat.msgs.some((x) => x.who === "me" && !x.auto)) return; // a quiz nobody answered is not kept
+  const chats = loadChats().filter((c) => c.id !== chat.id);
+  chats.unshift(chat);
   store.set("chats", JSON.stringify(chats.slice(0, KEEP)));
 }
 
 function openChat(c) {
-  if (pending) return;
-  const m = modes[c.mode];
-  m.sid = c.sid;
-  m.chat = c;
-  m.log.innerHTML = "";
-  for (const x of c.msgs) {
-    if (x.who === "me") addMsg(m.log, x.text, "me");
-    else showReply(m.log, addMsg(m.log, "", "bot"), x.text, x.card || {});
-  }
+  c = live[c.id] || c;
+  modes[c.mode].chat = c;
   setMode(c.mode);
+  draw(c);
+}
+
+// After a page load: chats still waiting for a reply send their message again; the server returns the kept result.
+function resume() {
+  let back;
+  for (const c of loadChats().reverse()) {
+    if (!c.msgs.some((x) => x.job)) continue;
+    if (c.msgs.some((x) => x.job && Date.now() - x.at > STALE)) {
+      fail(c, "No reply. Ask again.");
+      save(c);
+      continue;
+    }
+    back = modes[c.mode].chat = c;
+    deliver(c);
+  }
+  if (!back) return;
+  $("chat").hidden = false;
+  setMode(back.mode);
+  for (const k in modes) if (modes[k].chat) draw(modes[k].chat);
 }
 
 function showHistory(on) {
@@ -41,8 +51,8 @@ function showHistory(on) {
   for (const c of chats) {
     const b = document.createElement("button"), when = document.createElement("span");
     b.className = "past";
-    when.textContent = `${new Date(c.time).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} - ${c.mode === "quiz" ? "Quiz" : "Ask"}`;
-    b.append(when, (c.msgs.find((x) => x.who === "me") || c.msgs[0]).text.slice(0, 80));
+    when.textContent = `${new Date(c.time).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} - ${c.mode === "quiz" ? "Quiz" : "Ask"}${c.msgs.some((x) => x.job) ? " - waiting for Claude" : ""}`;
+    b.append(when, (c.msgs.find((x) => x.who === "me" && !x.auto) || c.msgs[0]).text.slice(0, 80));
     b.onclick = () => openChat(c);
     list.appendChild(b);
   }

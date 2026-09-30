@@ -1,8 +1,12 @@
+// A chat record is the source of truth: { id, mode, time, sid, msgs }. A "me" message keeps a job id until its reply is in.
+// The server keeps each result by job id, so sending the same job again (after a page refresh) returns the same reply.
 const modes = {
-  ask: { sid: null, chat: null, log: $("log-ask"), hint: "Ask a question about this card" },
-  quiz: { sid: null, chat: null, log: $("log-quiz"), hint: "Type your answer, 'hint', 'skip', or 'stop'" },
+  ask: { chat: null, log: $("log-ask"), hint: "Ask a question about this card" },
+  quiz: { chat: null, log: $("log-quiz"), hint: "Type your answer, 'hint', 'skip', or 'stop'" },
 };
-let mode = "ask", pending = 0;
+const live = {}; // chats with a running sender, by id
+const STALE = 10 * 60 * 1000; // a waiting message older than this is not sent again
+let mode = "ask", leaving = false;
 
 function addMsg(log, text, cls) {
   const d = document.createElement("div");
@@ -50,28 +54,62 @@ function showReply(log, el, reply, card) {
   if (block) proposal(log, block[1], card);
 }
 
-async function send(message) {
-  const at = mode, m = modes[at], log = m.log, sel = $("lesson"), card = currentCard();
-  const wait = addMsg(log, "Claude is thinking...", "bot");
-  pending++;
-  try {
-    const r = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: at, message, session_id: m.sid, card: card.text, lesson: sel.options[sel.selectedIndex].text }),
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || r.status);
-    m.sid = data.session_id;
-    showReply(log, wait, data.reply, card);
-    record(m, at, { who: "bot", text: data.reply, card: { lesson: card.lesson, type: card.type, index: card.index } });
-  } catch (e) {
-    wait.className = "msg err";
-    wait.textContent = location.protocol === "file:"
-      ? "Chat needs the server. Run: python3 server.py (in this folder), then open http://127.0.0.1:8765"
-      : "Error: " + e.message;
+function draw(chat) {
+  const log = modes[chat.mode].log;
+  if (modes[chat.mode].chat !== chat) return;
+  log.innerHTML = "";
+  for (const x of chat.msgs) {
+    if (x.who === "bot") showReply(log, addMsg(log, "", "bot"), x.text, x.card || {});
+    else if (!x.auto) addMsg(log, x.text, x.who);
   }
-  pending--;
+  if (chat.msgs.some((x) => x.job)) addMsg(log, "Claude is thinking...", "bot");
+}
+
+function fail(chat, text) {
+  chat.msgs.forEach((x) => { delete x.job; });
+  chat.msgs.push({ who: "err", text });
+}
+
+// Sends the chat's waiting messages one at a time, in order.
+async function deliver(chat) {
+  if (live[chat.id]) return;
+  live[chat.id] = chat;
+  for (let x; (x = chat.msgs.find((y) => y.job));) {
+    try {
+      const r = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: x.job, mode: chat.mode, message: x.text, session_id: chat.sid, card: x.card.text, lesson: x.card.name }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || r.status);
+      chat.sid = data.session_id;
+      chat.msgs.splice(chat.msgs.indexOf(x) + 1, 0, { who: "bot", text: data.reply, card: x.card.ref });
+      delete x.job;
+      delete x.card;
+    } catch (e) {
+      if (leaving) return; // the page is going away: keep the job so the next load can resume it
+      fail(chat, location.protocol === "file:"
+        ? "Chat needs the server. Run: python3 server.py (in this folder), then open http://127.0.0.1:8765"
+        : "Error: " + e.message);
+    }
+    save(chat);
+    draw(chat);
+  }
+  delete live[chat.id];
+  if (!$("log-history").hidden) showHistory(true);
+}
+
+function say(text, auto) {
+  const m = modes[mode], card = currentCard(), sel = $("lesson");
+  m.chat = m.chat || { id: crypto.randomUUID(), mode, time: Date.now(), sid: null, msgs: [] };
+  m.chat.msgs.push({
+    who: "me", text, auto, job: crypto.randomUUID(), at: Date.now(),
+    card: { text: card.text.slice(0, 3000), name: sel.options[sel.selectedIndex].text, ref: { lesson: card.lesson, type: card.type, index: card.index } },
+  });
+  save(m.chat);
+  draw(m.chat);
+  deliver(m.chat);
 }
 
 function setMode(m) {
@@ -79,15 +117,14 @@ function setMode(m) {
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.mode === m));
   showHistory(false);
   $("msg").placeholder = modes[m].hint;
-  if (m === "quiz" && !modes.quiz.log.children.length) send("start");
+  if (m === "quiz" && !modes.quiz.chat) say("start", true);
 }
 
 function newChat() {
-  if (pending) return;
-  modes[mode].sid = modes[mode].chat = null;
+  modes[mode].chat = null;
   modes[mode].log.innerHTML = "";
   showHistory(false);
-  if (mode === "quiz") send("start");
+  if (mode === "quiz") say("start", true);
 }
 
 function setWidth(w) {
@@ -115,10 +152,10 @@ $("chat-form").onsubmit = (e) => {
   if (!text) return;
   $("msg").value = "";
   showHistory(false);
-  addMsg(modes[mode].log, text, "me");
-  record(modes[mode], mode, { who: "me", text });
-  send(text);
+  say(text);
 };
 $("msg").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("chat-form").requestSubmit(); }
 });
+addEventListener("beforeunload", () => { leaving = true; });
+resume();

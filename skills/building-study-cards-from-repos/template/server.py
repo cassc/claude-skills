@@ -21,6 +21,8 @@ MAX_SOURCE = 1_000_000  # bytes; larger files are not shown in the source popup
 MAX_FILES = 5000  # cap for the file list when the folder is not a git repo
 SESSION = re.compile(r"^[0-9a-f-]{36}$")
 FIELDS = {"cards": ("t", "b"), "qa": ("q", "a")}
+KEEP = 20  # chat results kept in memory, by message id
+jobs: dict[str, dict] = {}
 lock = threading.Lock()
 
 
@@ -38,15 +40,30 @@ def ask_claude(message: str, mode: str, session_id: str | None) -> dict:
 
 
 def chat(body: dict) -> dict:
-    mode, sid = body.get("mode", "quiz"), body.get("session_id")
-    if mode not in PROMPTS or (sid and not SESSION.match(sid)):
-        raise ValueError("bad mode or session id")
-    msg = body.get("message", "").strip()
-    if mode == "ask":
-        msg = f"[Current card: {str(body.get('card', ''))[:3000]}]\n{msg}"
-    elif not sid:
-        msg = f"Quiz me on: {body.get('lesson', 'all lessons')}. {msg}".strip()
-    return ask_claude(msg, mode, sid)
+    mode, sid, job_id = body.get("mode", "quiz"), body.get("session_id"), body.get("id")
+    if mode not in PROMPTS or (sid and not SESSION.match(sid)) or not (isinstance(job_id, str) and SESSION.match(job_id)):
+        raise ValueError("bad mode, session id or message id")
+    with lock:
+        job = jobs.get(job_id)
+        if first := job is None:
+            job = jobs[job_id] = {"done": threading.Event()}
+            for old in list(jobs)[:-KEEP]:
+                del jobs[old]
+    if first:  # the same id again (a page refresh) waits for this run and gets the same result
+        msg = body.get("message", "").strip()
+        if mode == "ask":
+            msg = f"[Current card: {str(body.get('card', ''))[:3000]}]\n{msg}"
+        elif not sid:
+            msg = f"Quiz me on: {body.get('lesson', 'all lessons')}. {msg}".strip()
+        try:
+            job["res"] = ask_claude(msg, mode, sid)
+        except Exception as e:
+            job["err"] = e
+        job["done"].set()
+    job["done"].wait()
+    if "err" in job:
+        raise job["err"]
+    return job["res"]
 
 
 def save_card(body: dict) -> dict:
