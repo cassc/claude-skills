@@ -10,6 +10,7 @@
 <header>
   <h1>{{TITLE}}</h1>
   <select id="lesson" aria-label="Lesson"></select>
+  <button id="files">Files</button>
   <button id="chat-toggle">Claude</button>
 </header>
 <main>
@@ -47,10 +48,16 @@
 </main>
 <dialog id="src">
   <form method="dialog" class="row">
-    <a id="src-title" target="_blank" title="Open the file in a new tab"></a>
-    <button>Close</button>
+    <span id="src-title"></span>
+    <span><a id="src-tab" target="_blank">Open in new tab</a> <button>Close</button></span>
   </form>
-  <pre id="src-code" tabindex="0"></pre>
+  <div class="src-body">
+    <div class="src-side">
+      <input id="src-filter" placeholder="Filter files" aria-label="Filter files">
+      <div id="src-files"></div>
+    </div>
+    <pre id="src-code" tabindex="0"></pre>
+  </div>
 </dialog>
 <script src="cards.js"></script>
 <script src="quiz.js"></script>

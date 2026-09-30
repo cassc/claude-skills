@@ -22,7 +22,7 @@ Every concept card, likely-question answer, and quiz `e` cites 1-2 places as
 `<code>src/auth/token.py:42-60</code>` (path from the repo root, then a line or
 a range). The page makes these clickable: a popup shows the file at those
 lines. Prefer a range that shows the whole idea (a function, a check) over one
-line. Files under dot dirs or over 300 KB do not open.
+line. Files under dot dirs, git-ignored files, and files over 1 MB do not open.
 
 ## Architecture lesson
 The first lesson, id `00`. Skip it for a repo with one module.

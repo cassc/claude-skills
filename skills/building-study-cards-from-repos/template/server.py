@@ -17,7 +17,8 @@ PROMPTS = {m: (WEB / f"{m}_prompt.md").read_text() for m in ("ask", "quiz")}
 ORIGINS = {f"http://{HOST}:{PORT}", f"http://localhost:{PORT}"}
 HOSTS = {o.split("//")[1] for o in ORIGINS}
 ASSETS = {f"{WEB.name}/diagrams"}  # repo-relative image dirs the page may load
-MAX_SOURCE = 300_000  # bytes; larger files are not shown in the source popup
+MAX_SOURCE = 1_000_000  # bytes; larger files are not shown in the source popup
+MAX_FILES = 5000  # cap for the file list when the folder is not a git repo
 SESSION = re.compile(r"^[0-9a-f-]{36}$")
 FIELDS = {"cards": ("t", "b"), "qa": ("q", "a")}
 lock = threading.Lock()
@@ -64,10 +65,26 @@ def save_card(body: dict) -> dict:
     return {"ok": True}
 
 
+def files() -> list[str]:
+    """Repo files the popup may show: tracked or new, not git-ignored, no dot parts."""
+    try:
+        out = subprocess.run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+                             cwd=ROOT, capture_output=True, text=True, check=True).stdout.split("\0")
+    except (OSError, subprocess.CalledProcessError):  # no git, or not a git repo: walk the folder
+        out = []
+        for d, dirs, names in os.walk(ROOT):
+            dirs[:] = [x for x in dirs if not x.startswith(".")]
+            out += [(Path(d) / n).relative_to(ROOT).as_posix() for n in names]
+            if len(out) >= MAX_FILES:
+                break
+        out = out[:MAX_FILES]
+    return sorted(p for p in out if p and not any(x.startswith(".") for x in p.split("/")))
+
+
 def source(path: str) -> bytes:
     file = (ROOT / path).resolve()
-    rel = file.relative_to(ROOT.resolve())  # ValueError if outside the repo
-    if any(p.startswith(".") for p in rel.parts) or not file.is_file() or file.stat().st_size > MAX_SOURCE:
+    rel = file.relative_to(ROOT)  # ValueError if outside the repo
+    if rel.as_posix() not in files() or not file.is_file() or file.stat().st_size > MAX_SOURCE:
         raise ValueError("bad path")
     data = file.read_bytes()
     data.decode()  # binary files raise UnicodeDecodeError, a ValueError
@@ -83,16 +100,19 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         url = urlsplit(self.path)
-        if url.path != "/api/source":
+        if url.path not in ("/api/source", "/api/files"):
             return super().do_GET()
         if self.headers.get("Host") not in HOSTS:
             return self.send_error(403, "bad host")
         try:
-            data = source(parse_qs(url.query).get("path", [""])[0])
+            if url.path == "/api/files":
+                data, kind = json.dumps(files()).encode(), "application/json"
+            else:
+                data, kind = source(parse_qs(url.query).get("path", [""])[0]), "text/plain; charset=utf-8"
         except (ValueError, OSError):
             return self.send_error(404)
         self.send_response(200)
-        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Type", kind)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
