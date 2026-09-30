@@ -1,0 +1,7 @@
+{
+  "name": "cassc-skills",
+  "description": "Claude Code skills and agents by cassc",
+  "version": "0.1.0",
+  "author": { "name": "cassc" },
+  "license": "MIT"
+}

@@ -1,0 +1,70 @@
+:root {
+  --bg: #f6f5f1; --panel: #fff; --text: #1d1d1b; --muted: #6b6a64;
+  --line: #dddbd3; --accent: #2f5fd0; --right: #1f8a4c; --wrong: #c43d3d;
+  --code: #efeee8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181a; --panel: #212225; --text: #e8e6e1; --muted: #9a988f;
+    --line: #34353a; --accent: #7aa2ff; --right: #4cc281; --wrong: #ff7a7a;
+    --code: #2c2d31;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.55 system-ui, sans-serif; }
+header { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+h1 { font-size: 18px; margin: 0; flex: 1; }
+select, button, textarea { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; }
+button { cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .4; cursor: default; }
+main { display: flex; gap: 16px; padding: 16px; max-width: 1200px; margin: 0 auto; }
+#deck { flex: 1; min-width: 0; }
+#progress { height: 4px; background: var(--line); border-radius: 2px; }
+#bar { height: 100%; background: var(--accent); border-radius: 2px; transition: width .2s; }
+#kind { color: var(--muted); font-size: 14px; margin: 12px 0 8px; }
+#card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 28px; min-height: 340px; outline: none; }
+#card h2 { margin-top: 0; font-size: 24px; line-height: 1.3; }
+#card.likely h2, #card.quiz h2 { font-size: 21px; }
+#card.first { border-left: 4px solid var(--right); }
+#card.likely { border-left: 4px solid var(--accent); }
+#card button { display: block; margin: 10px 0; }
+code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: .9em; }
+#card img { width: 100%; background: #fff; border-radius: 8px; border: 1px solid var(--line); }
+.dia { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; align-items: start; }
+.steps { padding-left: 24px; margin: 12px 0 4px; }
+.steps li { padding: 3px 8px; border-radius: 6px; cursor: pointer; color: var(--muted); }
+.steps li.done { color: var(--text); }
+.steps li.on { background: var(--accent); color: #fff; font-weight: 600; }
+.loop { font-size: 11px; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+.note { min-height: 1.5em; font-style: italic; }
+.answer { border-top: 1px solid var(--line); padding-top: 12px; }
+.opt { width: 100%; text-align: left; }
+.opt.right { border-color: var(--right); color: var(--right); opacity: 1; }
+.opt.wrong { border-color: var(--wrong); color: var(--wrong); opacity: 1; }
+.explain { color: var(--muted); }
+nav { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
+.hint { color: var(--muted); font-size: 13px; text-align: center; }
+#chat { width: 380px; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; height: calc(100vh - 100px); position: sticky; top: 16px; }
+#chat[hidden] { display: none; }
+.log { flex: 1; overflow-y: auto; font-size: 15px; }
+.log[hidden] { display: none; }
+.tabs { display: flex; gap: 6px; margin-bottom: 6px; }
+.tabs button { flex: 1; font-size: 14px; }
+.tabs button.on { border-color: var(--accent); color: var(--accent); }
+.msg.proposal { border: 1px dashed var(--accent); white-space: normal; }
+.proposal h3 { margin: 4px 0; font-size: 16px; }
+.proposal .label { margin: 0; color: var(--muted); font-size: 13px; }
+.proposal button { margin: 8px 8px 0 0; font-size: 14px; }
+.msg { margin: 8px 0; padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; }
+.msg.me { background: var(--code); margin-left: 30px; }
+.msg.bot { border: 1px solid var(--line); margin-right: 20px; }
+.msg.err { color: var(--wrong); }
+textarea { width: 100%; resize: vertical; }
+.row { display: flex; justify-content: space-between; margin-top: 8px; }
+@media (max-width: 800px) {
+  main { flex-direction: column; }
+  #chat { width: 100%; height: 70vh; position: static; }
+  #card { padding: 18px; min-height: 260px; }
+  .dia { grid-template-columns: 1fr; }
+}

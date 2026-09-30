@@ -1,0 +1,12 @@
+[Unit]
+Description=Telegram bot for Claude Code on local repos
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 %h/.claude/skills/telegram-repo-bot/bot.py
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

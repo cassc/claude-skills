@@ -1,0 +1,12 @@
+{
+  "name": "cassc-skills",
+  "owner": { "name": "cassc" },
+  "metadata": { "description": "Claude Code skills and agents by cassc" },
+  "plugins": [
+    {
+      "name": "cassc-skills",
+      "source": "./",
+      "description": "Claude Code skills and agents by cassc"
+    }
+  ]
+}
