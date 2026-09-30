@@ -18,7 +18,7 @@ select, button, textarea { font: inherit; color: inherit; background: var(--pane
 button { cursor: pointer; }
 button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { opacity: .4; cursor: default; }
-main { display: flex; gap: 16px; padding: 16px; max-width: 1200px; margin: 0 auto; }
+main { display: flex; gap: 16px; padding: 16px; }
 #deck { flex: 1; min-width: 0; }
 #progress { height: 4px; background: var(--line); border-radius: 2px; }
 #bar { height: 100%; background: var(--accent); border-radius: 2px; transition: width .2s; }
@@ -61,12 +61,12 @@ nav { display: flex; justify-content: space-between; align-items: center; margin
 .proposal h3 { margin: 4px 0; font-size: 16px; }
 .proposal .label { margin: 0; color: var(--muted); font-size: 13px; }
 .proposal button { margin: 8px 8px 0 0; font-size: 14px; }
-.msg { margin: 8px 0; padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; }
+.msg { margin: 8px 0; padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg.me { background: var(--code); margin-left: 30px; }
 .msg.bot { border: 1px solid var(--line); margin-right: 20px; }
 .msg.err { color: var(--wrong); }
 .msg p { margin: 0 0 8px; }
-.msg pre { margin: 0 0 8px; padding: 8px; overflow-x: auto; white-space: pre; background: var(--code); border-radius: 6px; font-size: 13px; line-height: 1.45; }
+.msg pre { margin: 0 0 8px; padding: 8px; white-space: pre-wrap; background: var(--code); border-radius: 6px; font-size: 13px; line-height: 1.45; }
 .msg pre code { padding: 0; background: none; font-size: inherit; }
 .msg ul, .msg ol { margin: 0 0 8px; padding-left: 24px; }
 .msg h4, .msg h5, .msg h6 { margin: 10px 0 4px; font-size: 15px; }
@@ -91,6 +91,11 @@ code.ref { color: var(--accent); cursor: pointer; text-decoration: underline; }
 #src-code span.hit { background: color-mix(in srgb, var(--accent) 25%, transparent); }
 textarea { width: 100%; resize: vertical; }
 .row { display: flex; justify-content: space-between; margin-top: 8px; }
+@media (min-width: 801px) {
+  #deck { flex: 0 1 772px; margin: 0 auto; }
+  main:has(#chat[hidden]) #deck { flex-basis: 1168px; }
+  #chat { flex: 1 0 380px; min-width: 0; }
+}
 @media (max-width: 800px) {
   main { flex-direction: column; }
   #chat { width: 100%; height: 70vh; position: static; }
