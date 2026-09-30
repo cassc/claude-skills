@@ -32,14 +32,17 @@ then the evidence. Test the *reason*, never recall of names or numbers.
 Read the repo's own teaching material first (README, lesson folders,
 cheat sheets, review questions, eval results). One lesson = one topic.
 
-Per lesson, in this order:
-- **1 first-principle card** (`fp: true`): the root limit and "So: ...".
-- **4-7 concept cards**: title is a "Why ...?" or a claim. Body:
+Per lesson, in this order. Write as many cards, questions, and quiz items
+as the lesson needs:
+- **First-principle card** (`fp: true`), at least one, first in the
+  lesson: the root limit and "So: ...".
+- **Concept cards**: title is a "Why ...?" or a claim. Body:
   `Problem: ... So: ... Evidence: <real number/output from the repo>`.
-  Under ~60 words. Include the honest results (where the fancy method lost).
-- **4-5 likely questions** (`qa`): interview style. Answer starts from the
+  One idea per card. Include the honest results (where the fancy method
+  lost).
+- **Likely questions** (`qa`): interview style. Answer starts from the
   root cause, then the idea, then one trade-off.
-- **3-4 quiz items**: each asks "why" or "what breaks if". Distractors are
+- **Quiz items**: each asks "why" or "what breaks if". Distractors are
   plausible wrong causes. `e` = one-line cause.
 - **Diagrams** (only if the repo has them): list the steps in order with a
   short "why" note each; mark repeated steps `loop: true`. The step list is

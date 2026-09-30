@@ -52,7 +52,7 @@ def chat(body: dict) -> dict:
     if first:  # the same id again (a page refresh) waits for this run and gets the same result
         msg = body.get("message", "").strip()
         if mode == "ask":
-            msg = f"[Current card: {str(body.get('card', ''))[:3000]}]\n{msg}"
+            msg = f"[Current card: {str(body.get('card', ''))[:20000]}]\n{msg}"
         elif not sid:
             msg = f"Quiz me on: {body.get('lesson', 'all lessons')}. {msg}".strip()
         try:

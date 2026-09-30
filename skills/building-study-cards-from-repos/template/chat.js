@@ -105,7 +105,7 @@ function say(text, auto) {
   m.chat = m.chat || { id: crypto.randomUUID(), mode, time: Date.now(), sid: null, msgs: [] };
   m.chat.msgs.push({
     who: "me", text, auto, job: crypto.randomUUID(), at: Date.now(),
-    card: { text: card.text.slice(0, 3000), name: sel.options[sel.selectedIndex].text, ref: { lesson: card.lesson, type: card.type, index: card.index } },
+    card: { text: card.text.slice(0, 20000), name: sel.options[sel.selectedIndex].text, ref: { lesson: card.lesson, type: card.type, index: card.index } },
   });
   save(m.chat);
   draw(m.chat);

@@ -18,7 +18,8 @@ you skipped.
   says so.
 
 ## Code references
-Every concept card, likely-question answer, and quiz `e` cites 1-2 places as
+Every concept card, likely-question answer, and quiz `e` cites at least one
+place as
 `<code>src/auth/token.py:42-60</code>` (path from the repo root, then a line or
 a range). The page makes these clickable: a popup shows the file at those
 lines. Prefer a range that shows the whole idea (a function, a check) over one
@@ -29,7 +30,7 @@ The first lesson, id `00`. Skip it for a repo with one module.
 - `fp` card: what the system must do, and the root limit that shapes it.
 - Where state lives (memory, disk, database, another service) and which
   module owns it.
-- The 2-3 biggest design choices: what was picked, what it costs, and the
+- The biggest design choices: what was picked, what it costs, and the
   code that shows it.
 - Likely questions: "walk me through the architecture", "why is it split
   this way?".
@@ -49,7 +50,7 @@ lesson. With no `job` fields there is no slide.
 Follow one real request (or job, or event) from the entry point to the
 response. Skip it for a repo with no request or data flow, like a pure
 library.
-- One `DIAGRAMS` entry under `"00"`, 5-9 steps in order.
+- One `DIAGRAMS` entry under `"00"`, one step per real hop, in order.
 - `s` = what happens. `n` = why it happens here, plus
   `<code>path/file.ext:12-30</code>`.
 - `img` and `art` are optional. With neither, the step list is the whole

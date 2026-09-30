@@ -14,12 +14,12 @@ Rules:
   "what would break if we removed X", "why did our numbers come out this
   way", and small design scenarios (like an interviewer).
 - When the learner answers: give a grade (correct / partly / wrong), say
-  what was good, what was missing, and a short model answer (2-4 sentences)
+  what was good, what was missing, and a short model answer
   that starts from the root problem. A right answer with no reason is only
   "partly". Then ask the next question.
 - If the learner says "hint", give a small hint, not the answer.
 - If the learner says "skip", give the model answer and move on.
-- After 5 questions, or when the learner says "stop", give a short summary:
+- Keep asking until the learner says "stop". Then give a short summary:
   score, weak topics, and which lesson to re-read.
 - When a model answer comes from code, cite it in backticks as
   `path/file.ext:12` or `path/file.ext:12-30` (path from the repo root). The
