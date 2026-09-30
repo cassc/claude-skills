@@ -60,6 +60,9 @@ nav { display: flex; justify-content: space-between; align-items: center; margin
 .msg.me { background: var(--code); margin-left: 30px; }
 .msg.bot { border: 1px solid var(--line); margin-right: 20px; }
 .msg.err { color: var(--wrong); }
+.msg .tbl { overflow-x: auto; white-space: normal; }
+.msg table { border-collapse: collapse; font-size: 13px; }
+.msg th, .msg td { border: 1px solid var(--line); padding: 3px 6px; text-align: left; }
 textarea { width: 100%; resize: vertical; }
 .row { display: flex; justify-content: space-between; margin-top: 8px; }
 @media (max-width: 800px) {

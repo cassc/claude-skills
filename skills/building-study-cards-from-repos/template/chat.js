@@ -15,6 +15,15 @@ function addMsg(log, text, cls) {
 
 const bold = (el) => { el.innerHTML = el.innerHTML.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>"); };
 
+const tables = (el) => {
+  const tr = (row, tag) => "<tr>" + row.trim().replace(/^\||\|$/g, "").split("|")
+    .map((c) => `<${tag}>${c.trim()}</${tag}>`).join("") + "</tr>";
+  el.innerHTML = el.innerHTML.replace(/^(\|.+\|[ \t]*\n\|[ :|-]*-[ :|-]*\|[ \t]*(?:\n\|.+\|[ \t]*)*)\n?/gm, (_, block) => {
+    const [head, , ...body] = block.split("\n");
+    return `<div class="tbl"><table>${tr(head, "th")}${body.map((r) => tr(r, "td")).join("")}</table></div>`;
+  });
+};
+
 function proposal(log, raw, target) {
   let c;
   try { c = JSON.parse(raw); } catch { return; }
@@ -59,6 +68,7 @@ async function send(message) {
     const block = data.reply.match(/```card\s*([\s\S]*?)```/);
     wait.textContent = data.reply.replace(/```card[\s\S]*?```/, "").trim();
     bold(wait);
+    tables(wait);
     if (block) proposal(log, block[1], card);
   } catch (e) {
     wait.className = "msg err";
