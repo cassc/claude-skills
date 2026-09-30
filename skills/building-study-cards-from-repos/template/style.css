@@ -52,7 +52,7 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
 nav { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
 .hint { color: var(--muted); font-size: 13px; text-align: center; }
 #chat { width: 380px; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; height: calc(100vh - 100px); position: sticky; top: 16px; }
-#chat[hidden] { display: none; }
+#chat[hidden], #chat-grip { display: none; }
 .log { flex: 1; overflow-y: auto; font-size: 15px; }
 .log[hidden] { display: none; }
 .tabs { display: flex; gap: 6px; margin-bottom: 6px; }
@@ -96,6 +96,10 @@ textarea { width: 100%; resize: vertical; }
   #deck { flex: 0 1 772px; margin: 0 auto; }
   main:has(#chat[hidden]) #deck { flex-basis: 1168px; }
   #chat { flex: 1 0 380px; min-width: 0; }
+  main.sized:has(#chat:not([hidden])) #deck { flex: 1 1 0; }
+  main.sized #chat { flex: 0 0 clamp(380px, var(--chat-w), calc(100% - 336px)); }
+  #chat-grip { display: block; position: absolute; left: -13px; top: 0; bottom: 0; width: 10px; border-radius: 5px; cursor: col-resize; user-select: none; touch-action: none; }
+  #chat-grip:hover, #chat-grip:active { background: var(--accent); opacity: .5; }
 }
 @media (max-width: 800px) {
   main { flex-direction: column; }

@@ -90,6 +90,21 @@ function newChat() {
   if (mode === "quiz") send("start");
 }
 
+function setWidth(w) {
+  const main = $("chat").parentNode;
+  main.classList.toggle("sized", w > 0);
+  main.style.setProperty("--chat-w", w + "px");
+  store.set("chat-w", w);
+}
+
+const grip = $("chat-grip");
+grip.onpointerdown = (e) => grip.setPointerCapture(e.pointerId);
+grip.onpointermove = (e) => {
+  if (grip.hasPointerCapture(e.pointerId)) setWidth(Math.max(380, Math.round($("chat").getBoundingClientRect().right - e.clientX - 8)));
+};
+grip.ondblclick = () => setWidth(0);
+setWidth(+store.get("chat-w") || 0);
+
 $("chat-toggle").onclick = () => { $("chat").hidden = !$("chat").hidden; };
 document.querySelectorAll(".tabs button").forEach((b) => { b.onclick = () => setMode(b.dataset.mode); });
 $("chat-new").onclick = newChat;

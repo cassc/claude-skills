@@ -74,6 +74,7 @@ slide, a request trace, and PlantUML/Structurizr images.
   popup.
 - Ask mode: one question on a card; a suggestion shows Replace/Add buttons.
 - Quiz mode: first question is a "why" question.
+- Drag the chat panel's left edge: the panel gets wider, the cards narrower.
 - History: reload the page, open History, open the chat: the reply is there.
 - Reset `extra-cards.json` to `[]` after test saves.
 
