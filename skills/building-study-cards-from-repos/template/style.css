@@ -32,6 +32,11 @@ main { display: flex; gap: 16px; padding: 16px; max-width: 1200px; margin: 0 aut
 code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: .9em; }
 #card img { width: 100%; background: #fff; border-radius: 8px; border: 1px solid var(--line); }
 .dia { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; align-items: start; }
+.dia.noimg { grid-template-columns: 1fr; }
+#card .tbl { overflow-x: auto; }
+#card table { border-collapse: collapse; font-size: 15px; }
+#card th, #card td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+#card .jump { margin: 0; white-space: nowrap; font-size: 15px; }
 .steps { padding-left: 24px; margin: 12px 0 4px; }
 .steps li { padding: 3px 8px; border-radius: 6px; cursor: pointer; color: var(--muted); }
 .steps li.done { color: var(--text); }

@@ -50,6 +50,7 @@ function currentCard() {
   const s = slides[i];
   if (s.type) return { lesson: s.l.id, type: s.type, index: s.idx, text: `L${s.l.id} ${s.l.title} - ${s.kind}: ${s.t || s.q} | ${s.b || s.a}` };
   if (s.kind === "Diagram") return { lesson: s.l.id, text: `L${s.l.id} diagram "${s.d.t}", step ${s.step + 1}: ${s.d.steps[s.step].s}` };
+  if (s.kind === "Module map") return { lesson: s.l.id, text: "module map: " + LESSONS.filter((l) => l.job).map((l) => `L${l.id} ${l.title} - ${l.job} (uses: ${(l.uses || []).join(", ") || "none"}; entry: ${l.entry || "none"})`).join("; ") };
   return { lesson: s.l?.id, text: s.l ? `L${s.l.id} ${s.l.title} - quiz: ${s.item.q}` : "quiz result page" };
 }
 
@@ -60,7 +61,9 @@ function build(id, only) {
     for (const l of lessons) {
       l.cards.forEach((c, idx) => {
         s.push({ kind: c.fp ? "First principle" : "Concept", l, type: "cards", idx, ...c });
-        if (idx === 0) for (const d of DIAGRAMS[l.id] || []) s.push({ kind: "Diagram", l, d, step: 0 });
+        if (idx) return;
+        if (l === LESSONS[0] && LESSONS.some((x) => x.job)) s.push({ kind: "Module map", l });
+        for (const d of DIAGRAMS[l.id] || []) s.push({ kind: "Diagram", l, d, step: 0 });
       });
       l.qa.forEach((c, idx) => s.push({ kind: "Likely question", l, type: "qa", idx, ...c }));
     }
@@ -98,6 +101,7 @@ function render() {
       ? `<div class="answer">${clean(s.a)}</div>`
       : `<button class="reveal">Show answer (space)</button>`);
   } else if (s.kind === "Diagram") renderDiagram(s, card);
+  else if (s.kind === "Module map") renderMap(card);
   else if (s.kind === "Quiz") renderQuiz(s, card);
   else renderResult(card);
   linkRefs(card);
@@ -105,11 +109,19 @@ function render() {
 }
 
 function renderDiagram(s, card) {
-  const src = `../${s.d.img}`, cur = s.d.steps[s.step];
+  const src = s.d.img && `../${s.d.img}`, cur = s.d.steps[s.step];
   card.innerHTML = `<h2>${s.d.t}</h2>
-    <div class="dia"><a href="${src}" target="_blank" title="Open full size"><img src="${src}" alt="${s.d.img} diagram"></a>
+    <div class="dia${src ? "" : " noimg"}">${src ? `<a href="${src}" target="_blank" title="Open full size"><img src="${src}" alt="${s.d.img} diagram"></a>` : ""}
     <div><ol class="steps">${s.d.steps.map((x, n) => `<li data-n="${n}" class="${n === s.step ? "on" : n < s.step ? "done" : ""}">${x.s}${x.loop ? ' <span class="loop">loop</span>' : ""}</li>`).join("")}</ol>
     <p class="note">${cur.n || "&nbsp;"}</p></div></div>`;
+}
+
+function renderMap(card) {
+  const name = (id) => LESSONS.find((l) => l.id === id)?.title || id;
+  card.innerHTML = `<h2>Module map</h2><div class="tbl"><table><tr><th>Module</th><th>Job</th><th>Uses</th><th>Entry</th></tr>` +
+    LESSONS.filter((l) => l.job).map((l) => `<tr><td><button class="jump" data-id="${l.id}">L${l.id} ${l.title}</button></td>
+      <td>${clean(l.job)}</td><td>${(l.uses || []).map(name).join(", ")}</td>
+      <td>${l.entry ? `<code>${clean(l.entry)}</code>` : ""}</td></tr>`).join("") + "</table></div>";
 }
 
 function renderQuiz(s, card) {
@@ -139,6 +151,7 @@ $("card").addEventListener("click", (e) => {
   if (t.classList.contains("reveal")) { s.shown = true; render(); }
   else if (t.closest(".steps li")) { s.step = +t.closest("li").dataset.n; render(); }
   else if (t.classList.contains("opt")) { answers[s.key] = +t.dataset.n; render(); }
+  else if (t.classList.contains("jump")) { sel.value = t.dataset.id; sel.onchange(); }
   else if (t.id === "retry") start($("lesson").value, new Set($("card").dataset.wrong.split(",")));
   else if (t.id === "restart") { store.set("pos:" + $("lesson").value, 0); start($("lesson").value); }
 });

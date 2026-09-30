@@ -10,13 +10,13 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 HOST, PORT = "127.0.0.1", int(os.environ.get("PORT", 8765))
-WEB = Path(__file__).parent
+WEB = Path(__file__).resolve().parent
 ROOT = WEB.parent
 EXTRA = WEB / "extra-cards.json"
 PROMPTS = {m: (WEB / f"{m}_prompt.md").read_text() for m in ("ask", "quiz")}
 ORIGINS = {f"http://{HOST}:{PORT}", f"http://localhost:{PORT}"}
 HOSTS = {o.split("//")[1] for o in ORIGINS}
-ASSETS = set()  # repo-relative image dirs the page may load
+ASSETS = {f"{WEB.name}/diagrams"}  # repo-relative image dirs the page may load
 MAX_SOURCE = 300_000  # bytes; larger files are not shown in the source popup
 SESSION = re.compile(r"^[0-9a-f-]{36}$")
 FIELDS = {"cards": ("t", "b"), "qa": ("q", "a")}

@@ -1,5 +1,6 @@
 // Cards per lesson. fp = first-principle card (one per lesson, first). Concept: t, b (HTML). Likely question: q, a.
 // Card shape: root problem -> idea that follows -> evidence from the repo.
+// Source repos, optional per lesson (builds the module map slide): job: "one line", entry: "path/file.ext:12", uses: ["02"].
 const LESSONS = [
   {
     id: "01", title: "Example lesson",

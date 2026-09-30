@@ -21,7 +21,8 @@ then the evidence. Test the *reason*, never recall of names or numbers.
    The server treats the folder's parent as the repo root.
 2. Replace `{{TITLE}}` (index.html, both prompts) and `{{SOURCES}}` (both
    prompts: the doc paths Claude should read).
-3. Set `ASSETS` in `server.py` to repo-relative image dirs, if any.
+3. Add repo-relative image dirs to `ASSETS` in `server.py`, if any (the
+   folder's own `diagrams/` is already there).
 4. Write content (below) into `cards.js`, `quiz.js`, `diagrams.js`.
 5. Run `python3 learn/server.py`, open http://127.0.0.1:8765.
    `PORT=8766` runs a second copy. Cards and quiz also work from `file://`
@@ -47,29 +48,16 @@ Per lesson, in this order:
 Use plain, simple English and short sentences.
 
 ## Source code repos
-No lessons or results to copy: find the topics yourself.
-- **Lesson** = one module or subsystem (auth, storage, request flow).
-- **First principle** = the problem the design must handle (concurrency,
-  latency, failure, scale).
-- **Evidence** = code, a test, a benchmark, or a commit that shows why.
-- **Code references**: every concept card, likely-question answer, and quiz
-  `e` cites 1-2 places as `<code>src/auth/token.py:42-60</code>` (path from the
-  repo root, then a line or a range). The page makes these clickable: a popup
-  shows the file at those lines. Prefer a range that shows the whole idea (a
-  function, a check) over one line. Files under dot dirs or over 300 KB do
-  not open.
-- **Diagrams**: usually none; use a step list for one request or data flow.
-- **`{{SOURCES}}`**: core source dirs, README, ADRs/design docs. Not the whole
-  repo on big codebases (chat gets slow).
-- **Quiz**: "what breaks if we remove X?", "why here and not in Y?".
-- Every "why" cites code or a commit. If the reason is a guess, the card says so.
+**Read `source-repos.md` (next to this file) first.** It covers: one lesson
+per module, clickable code references, an architecture lesson, a module map
+slide, a request trace, and PlantUML/Structurizr images.
 
 ## Quick reference
 | File | Role |
 |---|---|
-| `cards.js` | `LESSONS` - cards + qa per lesson |
+| `cards.js` | `LESSONS` - cards + qa per lesson; optional `job`/`entry`/`uses` build the module map slide |
 | `quiz.js` | `QUIZ` - multiple choice per lesson id |
-| `diagrams.js` | `DIAGRAMS` - image + ordered steps |
+| `diagrams.js` | `DIAGRAMS` - ordered steps, image optional |
 | `ask_prompt.md` / `quiz_prompt.md` | Claude's rules per chat mode |
 | `extra-cards.json` | cards the learner approved from chat; commit it |
 | `markdown.js` | renders chat replies: code blocks, inline code, bold, lists, tables |
@@ -81,6 +69,8 @@ No lessons or results to copy: find the topics yourself.
 - Open the page: step through one lesson, one diagram (Space), finish the quiz.
 - Code references: each one names a real file and lines that exist. Click
   one: the popup opens at the marked lines.
+- Module map (if any): a jump button opens that lesson; an entry opens the
+  popup.
 - Ask mode: one question on a card; a suggestion shows Replace/Add buttons.
 - Quiz mode: first question is a "why" question.
 - Reset `extra-cards.json` to `[]` after test saves.
