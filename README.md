@@ -11,6 +11,12 @@ As a plugin (skills are named `cassc-skills:<skill>`):
 /plugin install cassc-skills@cassc-skills
 ```
 
+Or with the [skills](https://skills.sh) CLI (skills only, no agents):
+
+```sh
+npx skills add cassc/claude-skills
+```
+
 Or link one skill by hand:
 
 ```sh
