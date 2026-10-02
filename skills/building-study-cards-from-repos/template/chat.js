@@ -17,41 +17,88 @@ function addMsg(log, text, cls) {
   return d;
 }
 
-function proposal(log, raw, target) {
+function saveButton(box, label, body) {
+  const b = document.createElement("button");
+  b.textContent = label;
+  b.onclick = async () => {
+    b.disabled = true;
+    const r = await fetch("/api/cards", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(await body()),
+    });
+    b.textContent = r.ok ? "Saved" : "Save failed";
+    if (r.ok) reloadDeck();
+  };
+  box.appendChild(b);
+}
+
+// Shows a graph from a reply. kind art = a text drawing; any other kind is drawn by the server.
+// Returns its box and `graph`, a promise of the card fields that hold it: { img } or { art }, or null when it cannot be drawn.
+function diagram(log, kind, src) {
+  const box = document.createElement("div"), pre = document.createElement("pre");
+  box.className = "msg graph";
+  pre.textContent = src;
+  log.appendChild(box);
+  if (kind === "art") {
+    pre.className = "art";
+    box.appendChild(pre);
+    return { box, graph: Promise.resolve({ art: src }) };
+  }
+  box.textContent = "Drawing the graph...";
+  const graph = fetch("/api/diagram", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, src }),
+  }).then(async (r) => {
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.status);
+    const url = "../" + encodeURI(data.path);
+    box.innerHTML = `<a href="${url}" target="_blank" title="Open full size"><img src="${url}" alt="graph"></a>`;
+    return { img: data.path };
+  }).catch((e) => {
+    box.textContent = `Cannot draw the graph (${e.message}). Its source:`;
+    box.appendChild(pre);
+    return null;
+  }).finally(() => { log.scrollTop = log.scrollHeight; });
+  return { box, graph };
+}
+
+function proposal(log, raw, target, graph) {
   let c;
-  try { c = JSON.parse(raw); } catch { return; }
+  try { c = JSON.parse(raw); } catch { return false; }
   const type = c.type === "qa" ? "qa" : "cards";
   const data = type === "qa" ? { q: c.q, a: c.a } : { t: c.t, b: c.b };
   const box = document.createElement("div");
   box.className = "msg proposal";
-  box.innerHTML = `<p class="label">Suggested card</p><h3>${clean(data.t || data.q)}</h3><div>${clean(data.b || data.a)}</div>`;
-  const save = (index, label) => {
-    const b = document.createElement("button");
-    b.textContent = label;
-    b.onclick = async () => {
-      b.disabled = true;
-      const r = await fetch("/api/cards", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lesson: target.lesson, type, index, data }),
-      });
-      b.textContent = r.ok ? "Saved" : "Save failed";
-      if (r.ok) reloadDeck();
-    };
-    box.appendChild(b);
-  };
+  box.innerHTML = `<p class="label">Suggested card${graph ? " (with the graph above)" : ""}</p><h3>${clean(data.t || data.q)}</h3><div>${clean(data.b || data.a)}</div>`;
+  const save = (index, label) => saveButton(box, label, async () => ({ lesson: target.lesson, type, index, data: { ...data, ...(await graph) } }));
   linkRefs(box);
-  if (!target.lesson) return;
+  colorBlocks(box);
+  if (!target.lesson) return false;
   if (c.replace && target.type === type) save(target.index, "Replace this card");
   save(null, "Add as new card");
   log.appendChild(box);
   log.scrollTop = log.scrollHeight;
+  return true;
 }
 
+const CARD = /```card\s*([\s\S]*?)```/, DIAGRAM = /```diagram[ \t]+(\w+)[^\n]*\n([\s\S]*?)```/;
+
 function showReply(log, el, reply, card) {
-  const block = reply.match(/```card\s*([\s\S]*?)```/);
-  el.innerHTML = markdown(reply.replace(/```card[\s\S]*?```/, "").trim());
+  const block = reply.match(CARD), dia = reply.match(DIAGRAM);
+  el.innerHTML = markdown(reply.replace(CARD, "").replace(DIAGRAM, "").trim());
   linkRefs(el);
-  if (block) proposal(log, block[1], card);
+  el.hidden = !el.innerHTML;
+  const d = dia && diagram(log, dia[1], dia[2].replace(/\s+$/, ""));
+  if (block && proposal(log, block[1], card, d?.graph)) return;
+  // A graph with no suggested card: the learner can put it on the card they asked about.
+  d?.graph.then((g) => {
+    if (!g || !card.type) return;
+    saveButton(d.box, "Add to this card", () => {
+      const cur = LESSONS.find((l) => l.id === card.lesson)?.[card.type][card.index] || {};
+      const data = card.type === "qa" ? { q: cur.q, a: cur.a } : { t: cur.t, b: cur.b };
+      return { lesson: card.lesson, type: card.type, index: card.index, data: { ...data, ...g } };
+    });
+  });
 }
 
 function draw(chat) {

@@ -1,5 +1,5 @@
 // Chat history, kept in this browser: the newest KEEP chats, each { id, mode, time, sid, msgs: [{ who, text, card, job }] }.
-const KEEP = 30;
+const KEEP = 200;
 
 function loadChats() {
   try {
@@ -9,9 +9,9 @@ function loadChats() {
 
 function save(chat) {
   if (!chat.msgs.some((x) => x.who === "me" && !x.auto)) return; // a quiz nobody answered is not kept
-  const chats = loadChats().filter((c) => c.id !== chat.id);
-  chats.unshift(chat);
-  store.set("chats", JSON.stringify(chats.slice(0, KEEP)));
+  let chats = [chat, ...loadChats().filter((c) => c.id !== chat.id)].slice(0, KEEP);
+  // Browser storage is full: drop the oldest chats until the write works.
+  while (!store.set("chats", JSON.stringify(chats)) && chats.length > 1) chats = chats.slice(0, chats.length - Math.ceil(chats.length / 10));
 }
 
 function openChat(c) {
@@ -40,6 +40,25 @@ function resume() {
   for (const k in modes) if (modes[k].chat) draw(modes[k].chat);
 }
 
+// Downloads all saved chats (ask and quiz) as one Markdown file. Claude's replies are kept as written.
+function exportChats() {
+  const when = (t) => new Date(t).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  const cardName = (ref) => {
+    const l = LESSONS.find((x) => x.id === ref?.lesson), c = l?.[ref.type]?.[ref.index];
+    return l ? ` (card: L${l.id} ${l.title}${c ? " - " + (c.t || c.q).replace(/<[^>]+>/g, "") : ""})` : "";
+  };
+  const text = `# ${document.title} - chats, exported ${when(Date.now())}\n\n` + loadChats().map((c) =>
+    `## ${c.mode === "quiz" ? "Quiz" : "Ask"} - ${when(c.time)}\n\n` + c.msgs.filter((x) => !x.auto).map((x) =>
+      x.who === "bot" ? `**Claude**${c.mode === "ask" ? cardName(x.card) : ""}:\n\n${x.text}`
+        : x.who === "me" ? `**You:**\n\n${x.text}${x.job ? "\n\n(no reply yet)" : ""}`
+          : `**Note:** ${x.text}`).join("\n\n")).join("\n\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text + "\n"], { type: "text/markdown" }));
+  a.download = `study-chats-${new Date().toISOString().slice(0, 10)}.md`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 function showHistory(on) {
   const list = $("log-history");
   list.hidden = !on;
@@ -47,7 +66,8 @@ function showHistory(on) {
   $("chat-history").classList.toggle("on", on);
   if (!on) return;
   const chats = loadChats();
-  list.innerHTML = chats.length ? "" : `<p class="hint">No saved chats yet.</p>`;
+  list.innerHTML = chats.length ? `<button>Export all</button>` : `<p class="hint">No saved chats yet.</p>`;
+  if (chats.length) list.firstChild.onclick = exportChats;
   for (const c of chats) {
     const b = document.createElement("button"), when = document.createElement("span");
     b.className = "past";

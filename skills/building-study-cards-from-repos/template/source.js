@@ -70,9 +70,9 @@ async function showSource(ref) {
     const r = await fetch("/api/source?path=" + encodeURIComponent(path));
     if (!r.ok) throw new Error(r.status);
     pre.textContent = "";
-    (await r.text()).replace(/\n$/, "").split("\n").forEach((text, n) => {
+    colorLines((await r.text()).replace(/\n$/, ""), path).forEach((html, n) => {
       const line = document.createElement("span");
-      line.textContent = text;
+      line.innerHTML = html;
       if (n + 1 >= +from && n + 1 <= +(to || from)) line.className = "hit";
       pre.appendChild(line);
     });

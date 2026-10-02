@@ -1,13 +1,14 @@
 const $ = (id) => document.getElementById(id);
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  set(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } },
 };
 
 let slides = [], i = 0, answers = {};
-const ALLOWED = new Set(["B", "I", "CODE", "BR", "OL", "UL", "LI"]);
+const ALLOWED = new Set(["B", "I", "CODE", "PRE", "BR", "OL", "UL", "LI"]);
 
-// Card text may come from Claude, which reads repo files: keep only simple tags, no attributes.
+// Card text may come from Claude, which reads repo files: keep only simple tags, no attributes
+// (but <code class="language-py"> keeps its class, for the code colors).
 function clean(html) {
   const t = document.createElement("template");
   t.innerHTML = html ?? "";
@@ -15,13 +16,20 @@ function clean(html) {
     for (const c of [...node.childNodes]) {
       if (c.nodeType === 1) {
         walk(c);
-        if (ALLOWED.has(c.tagName)) [...c.attributes].forEach((a) => c.removeAttribute(a.name));
+        if (ALLOWED.has(c.tagName)) [...c.attributes].forEach((a) => { if (c.tagName !== "CODE" || a.name !== "class" || !/^language-\w+$/.test(a.value)) c.removeAttribute(a.name); });
         else c.replaceWith(...c.childNodes);
       } else if (c.nodeType !== 3) c.remove();
     }
   };
   walk(t.content);
   return t.innerHTML;
+}
+
+// A card's graph, shown under its text: img = repo-relative path, art = a plain text drawing.
+function graph(c) {
+  const src = c.img && "../" + encodeURI(c.img);
+  if (src) return `<a href="${src}" target="_blank" title="Open full size"><img src="${src}" alt="graph"></a>`;
+  return c.art ? `<pre class="art">${c.art.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</pre>` : "";
 }
 const BASE = structuredClone(LESSONS);
 
@@ -48,7 +56,7 @@ async function reloadDeck() {
 
 function currentCard() {
   const s = slides[i];
-  if (s.type) return { lesson: s.l.id, type: s.type, index: s.idx, text: `L${s.l.id} ${s.l.title} - ${s.kind}: ${s.t || s.q} | ${s.b || s.a}` };
+  if (s.type) return { lesson: s.l.id, type: s.type, index: s.idx, text: `L${s.l.id} ${s.l.title} - ${s.kind}: ${s.t || s.q} | ${s.b || s.a}${s.img || s.art ? " | the card shows a graph" : ""}` };
   if (s.kind === "Diagram") return { lesson: s.l.id, text: `L${s.l.id} diagram "${s.d.t}", step ${s.step + 1}: ${s.d.steps[s.step].s}` };
   if (s.kind === "Module map") return { lesson: s.l.id, text: "module map: " + LESSONS.filter((l) => l.job).map((l) => `L${l.id} ${l.title} - ${l.job} (uses: ${(l.uses || []).join(", ") || "none"}; entry: ${l.entry || "none"})`).join("; ") };
   return { lesson: s.l?.id, text: s.l ? `L${s.l.id} ${s.l.title} - quiz: ${s.item.q}` : "quiz result page" };
@@ -95,16 +103,17 @@ function render() {
   $("prev").disabled = i === 0;
   $("next").disabled = i === slides.length - 1;
   card.className = s.kind.split(" ")[0].toLowerCase();
-  if (s.type === "cards") card.innerHTML = `<h2>${clean(s.t)}</h2><div>${clean(s.b)}</div>`;
+  if (s.type === "cards") card.innerHTML = `<h2>${clean(s.t)}</h2><div>${clean(s.b)}</div>${graph(s)}`;
   else if (s.kind === "Likely question") {
     card.innerHTML = `<h2>${clean(s.q)}</h2>` + (s.shown
-      ? `<div class="answer">${clean(s.a)}</div>`
+      ? `<div class="answer">${clean(s.a)}</div>${graph(s)}`
       : `<button class="reveal">Show answer (space)</button>`);
   } else if (s.kind === "Diagram") renderDiagram(s, card);
   else if (s.kind === "Module map") renderMap(card);
   else if (s.kind === "Quiz") renderQuiz(s, card);
   else renderResult(card);
   linkRefs(card);
+  colorBlocks(card);
   store.set("pos:" + $("lesson").value, i);
 }
 

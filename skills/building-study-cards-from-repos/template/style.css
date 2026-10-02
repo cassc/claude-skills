@@ -34,6 +34,9 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
 .dia { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; align-items: start; }
 .dia.noimg { grid-template-columns: 1fr; }
 .art { min-width: 0; margin: 0; padding: 12px; overflow-x: auto; background: var(--code); border-radius: 8px; font: 13px/1.3 monospace; }
+#card pre:not(.art), .proposal pre { margin: 10px 0; padding: 10px 12px; overflow-x: auto; white-space: pre; background: var(--code); border-radius: 8px; font-size: 14px; line-height: 1.45; }
+#card pre code, .proposal pre code { padding: 0; background: none; font-size: inherit; }
+#card .art, #card a:has(> img) { display: block; margin-top: 12px; }
 #card .tbl { overflow-x: auto; }
 #card table { border-collapse: collapse; font-size: 15px; }
 #card th, #card td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
@@ -66,6 +69,9 @@ nav { display: flex; justify-content: space-between; align-items: center; margin
 .msg.me { background: var(--code); margin-left: 30px; }
 .msg.bot { border: 1px solid var(--line); margin-right: 20px; }
 .msg.err { color: var(--wrong); }
+.msg.graph { border: 1px solid var(--line); margin-right: 20px; white-space: normal; }
+.msg.graph img { display: block; max-width: 100%; background: #fff; border-radius: 6px; }
+.msg.graph button { margin: 8px 0 0; font-size: 14px; }
 .msg p { margin: 0 0 8px; }
 .msg pre { margin: 0 0 8px; padding: 8px; white-space: pre-wrap; background: var(--code); border-radius: 6px; font-size: 13px; line-height: 1.45; }
 .msg pre code { padding: 0; background: none; font-size: inherit; }
@@ -101,9 +107,9 @@ code.ref { color: var(--accent); cursor: pointer; text-decoration: underline; }
 #src-files button:hover { background: var(--code); }
 #src-files button.on { background: var(--accent); color: #fff; }
 #src-code { flex: 1; min-width: 0; min-height: 0; margin: 0; padding: 8px 0; overflow: auto; background: var(--code); border-radius: 8px; font-size: 13px; line-height: 1.45; counter-reset: ln; }
-#src-code span { display: block; width: max-content; min-width: 100%; padding-right: 12px; counter-increment: ln; content-visibility: auto; contain-intrinsic-height: auto 1.45em; }
-#src-code span::before { content: counter(ln); display: inline-block; width: 5ch; margin-right: 12px; text-align: right; color: var(--muted); user-select: none; }
-#src-code span.hit { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+#src-code > span { display: block; width: max-content; min-width: 100%; padding-right: 12px; counter-increment: ln; content-visibility: auto; contain-intrinsic-height: auto 1.45em; }
+#src-code > span::before { content: counter(ln); display: inline-block; width: 5ch; margin-right: 12px; text-align: right; color: var(--muted); user-select: none; }
+#src-code > span.hit { background: color-mix(in srgb, var(--accent) 25%, transparent); }
 textarea { width: 100%; resize: vertical; }
 .row { display: flex; justify-content: space-between; margin-top: 8px; }
 @media (min-width: 801px) {

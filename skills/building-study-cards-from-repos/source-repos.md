@@ -90,6 +90,9 @@ that works:
 5. **Nothing**, when a drawing would not help. Say nothing; the map slide
    and step lists still work.
 
+The chat uses the same order when the learner asks for a graph: the server
+runs the local tool, or saves the SVG that Claude wrote.
+
 Rules:
 - Never install a tool, pull a Docker image, or send code to a public render
   server without asking.

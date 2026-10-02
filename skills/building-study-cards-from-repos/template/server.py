@@ -1,8 +1,11 @@
 """Serve the study cards and let Claude Code tutor/quiz you: python3 <this dir>/server.py"""
+import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
+import tempfile
 import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -21,6 +24,14 @@ MAX_SOURCE = 1_000_000  # bytes; larger files are not shown in the source popup
 MAX_FILES = 5000  # cap for the file list when the folder is not a git repo
 SESSION = re.compile(r"^[0-9a-f-]{36}$")
 FIELDS = {"cards": ("t", "b"), "qa": ("q", "a")}
+DIAGRAMS = WEB / "diagrams"  # graphs made in chat are saved here
+MAX_DIAGRAM = 20_000  # characters of diagram source
+IMG = re.compile(rf"{re.escape(WEB.name)}/diagrams/[0-9a-f]{{16}}\.svg")
+# Diagram kind -> local command that reads the source on stdin and writes SVG to stdout, in the order to try.
+# mermaid has no such mode: see render().
+TOOLS = {"plantuml": ["plantuml", "-tsvg", "-pipe"], "dot": ["dot", "-Tsvg"], "mermaid": ["mmdc"], "d2": ["d2", "-", "-"]}
+UNSAFE_SVG = re.compile(r"<script|<foreignObject|\bon\w+\s*=|javascript:|(?:href|src)\s*=\s*[\"'](?!#)|url\(\s*[\"']?(?!#)", re.I)
+PROMPTS["ask"] += f"\nDiagram tools on this machine: {', '.join(k for k, c in TOOLS.items() if shutil.which(c[0])) or 'none'}.\n"
 KEEP = 20  # chat results kept in memory, by message id
 jobs: dict[str, dict] = {}
 lock = threading.Lock()
@@ -66,6 +77,43 @@ def chat(body: dict) -> dict:
     return job["res"]
 
 
+def render(kind: str, src: str) -> str:
+    if kind == "svg":
+        if not src.lstrip().startswith("<svg") or UNSAFE_SVG.search(src):
+            raise ValueError("the SVG must start with <svg and have no scripts, links or outside files")
+        return src
+    try:
+        if kind == "mermaid":
+            with tempfile.TemporaryDirectory() as d:
+                Path(d, "in.mmd").write_text(src)
+                out = subprocess.run(["mmdc", "-q", "-i", f"{d}/in.mmd", "-o", f"{d}/out.svg"],
+                                     capture_output=True, text=True, timeout=60)
+                svg = Path(d, "out.svg").read_text() if not out.returncode else ""
+        else:
+            out = subprocess.run(TOOLS[kind], input=src, capture_output=True, text=True, timeout=60)
+            svg = out.stdout
+    except OSError:
+        raise ValueError(f"{kind} is not installed")
+    if out.returncode or "<svg" not in svg:
+        raise ValueError((out.stderr.strip() or f"{kind} failed")[:500])
+    return svg
+
+
+def diagram(body: dict) -> dict:
+    """Draw a graph that Claude wrote in chat. The same source gives the same file."""
+    kind, src = body.get("kind"), body.get("src")
+    if kind not in (*TOOLS, "svg") or not isinstance(src, str) or not src.strip() or len(src) > MAX_DIAGRAM:
+        raise ValueError("bad diagram")
+    file = DIAGRAMS / (hashlib.sha256(f"{kind}\n{src}".encode()).hexdigest()[:16] + ".svg")
+    if not file.exists():
+        svg = render(kind, src)
+        DIAGRAMS.mkdir(exist_ok=True)
+        tmp = file.with_suffix(".tmp")
+        tmp.write_text(svg)
+        tmp.replace(file)
+    return {"path": file.relative_to(ROOT).as_posix()}
+
+
 def save_card(body: dict) -> dict:
     lesson, typ, index, data = body.get("lesson"), body.get("type", ""), body.get("index"), body.get("data", {})
     keys = FIELDS.get(typ)
@@ -73,9 +121,13 @@ def save_card(body: dict) -> dict:
             and (index is None or isinstance(index, int))
             and all(isinstance(data.get(k), str) and data[k].strip() for k in keys)):
         raise ValueError("bad card")
+    graph = {k: data[k] for k in ("img", "art") if k in data}  # optional: a graph made in chat
+    if (not all(isinstance(v, str) and len(v) <= MAX_DIAGRAM for v in graph.values())
+            or ("img" in graph and not IMG.fullmatch(graph["img"]))):
+        raise ValueError("bad graph")
     with lock:
         items = json.loads(EXTRA.read_text()) if EXTRA.exists() else []
-        items.append({"lesson": lesson, "type": typ, "index": index, "data": {k: data[k] for k in keys}})
+        items.append({"lesson": lesson, "type": typ, "index": index, "data": {k: data[k] for k in keys} | graph})
         tmp = EXTRA.with_suffix(".tmp")
         tmp.write_text(json.dumps(items, indent=1, ensure_ascii=False) + "\n")
         tmp.replace(EXTRA)
@@ -115,6 +167,11 @@ class Handler(SimpleHTTPRequestHandler):
             return str(ROOT / rel.parent / rel.name)
         return super().translate_path(path)
 
+    def end_headers(self):
+        if self.path.split("?")[0].endswith(".svg"):  # an SVG opened as a page must not run scripts or load outside files
+            self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:")
+        super().end_headers()
+
     def do_GET(self):
         url = urlsplit(self.path)
         if url.path not in ("/api/source", "/api/files"):
@@ -136,7 +193,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self):
-        route = {"/api/chat": chat, "/api/cards": save_card}.get(self.path)
+        route = {"/api/chat": chat, "/api/cards": save_card, "/api/diagram": diagram}.get(self.path)
         if not route:
             return self.send_error(404)
         if self.headers.get("Origin") not in ORIGINS:

@@ -1,4 +1,5 @@
 // Cards per lesson. fp = first-principle card (one per lesson, first). Concept: t, b (HTML). Likely question: q, a.
+// Optional on a card or a likely question, shown under its text: img: "learn/diagrams/x.svg" (repo-relative) or art: "a plain text drawing".
 // Card shape: root problem -> idea that follows -> evidence from the repo.
 // Source repos, optional per lesson (builds the module map slide): job: "one line", entry: "path/file.ext:12", uses: ["02"].
 const LESSONS = [

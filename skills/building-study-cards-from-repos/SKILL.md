@@ -9,8 +9,8 @@ description: Use when the user wants to learn or review the concepts in a repo (
 A local web page that teaches a repo's concepts: slide cards, likely
 questions, diagram walk-throughs, a multiple-choice quiz, and a side chat
 where Claude Code (running in the repo, read-only) answers questions about
-the current card, suggests better cards, and quizzes with graded free-text
-answers.
+the current card, suggests better cards, draws a graph when asked, and
+quizzes with graded free-text answers.
 
 **Core principle: first principles.** Every technique exists because of a
 root limit. Teach the limit first, then show the idea as its consequence,
@@ -58,15 +58,17 @@ slide, a request trace, and PlantUML/Structurizr images.
 ## Quick reference
 | File | Role |
 |---|---|
-| `cards.js` | `LESSONS` - cards + qa per lesson; optional `job`/`entry`/`uses` build the module map slide |
+| `cards.js` | `LESSONS` - cards + qa per lesson; a card may hold a code block (`<pre><code class="language-py">`) and a graph (`img` or `art`); optional `job`/`entry`/`uses` build the module map slide |
 | `quiz.js` | `QUIZ` - multiple choice per lesson id |
 | `diagrams.js` | `DIAGRAMS` - ordered steps; image or text drawing optional |
 | `ask_prompt.md` / `quiz_prompt.md` | Claude's rules per chat mode |
 | `extra-cards.json` | cards the learner approved from chat; commit it |
-| `history.js` | History button: the newest 30 chats, kept in the browser; resumes a waiting chat after a page reload |
+| `diagrams/` | graphs made in chat (made on first use); commit the ones a saved card uses |
+| `history.js` | History button: the newest 200 chats, kept in the browser; "Export all" downloads them (ask and quiz) as one Markdown file; resumes a waiting chat after a page reload |
 | `markdown.js` | renders chat replies: code blocks, inline code, bold, lists, tables |
+| `highlight.js` | code colors in cards and the source popup, by highlight.js from a CDN; with no internet, code is plain text |
 | `source.js` | makes `<code>path:line</code>` clickable; popup shows the file and a folding file tree (Files button), and can open in a new tab |
-| `server.py` | static files, `/api/chat` (`claude -p --resume`, tools Read/Grep/Glob; keeps each result by message id), `/api/cards`, `/api/files` and `/api/source` (read-only: repo files git does not ignore, for the popup) |
+| `server.py` | static files, `/api/chat` (`claude -p --resume`, tools Read/Grep/Glob; keeps each result by message id), `/api/cards`, `/api/diagram` (draws a graph Claude wrote in chat: a local tool, or Claude's own SVG after a safety check), `/api/files` and `/api/source` (read-only: repo files git does not ignore, for the popup) |
 
 ## Verify
 - `node -e` eval the three data files; every `a < o.length`.
@@ -79,12 +81,19 @@ slide, a request trace, and PlantUML/Structurizr images.
 - Module map (if any): a jump button opens that lesson; an entry opens the
   popup.
 - Ask mode: one question on a card; a suggestion shows Replace/Add buttons.
+- Ask mode: "draw a diagram of this": the graph shows in the chat. "Add to
+  this card" puts it under the card's text.
+- Code colors: a file in the popup and a `<pre><code>` block in a card show
+  colors; the popup's line numbers and marked lines still work.
 - Quiz mode: first question is a "why" question.
 - Drag the chat panel's left edge: the panel gets wider, the cards narrower.
 - Reload while Claude is thinking: the chat comes back and the reply arrives.
 - New chat while another chat waits: both replies arrive, each in its own chat.
 - History: reload the page, open History, open the chat: the reply is there.
-- Reset `extra-cards.json` to `[]` after test saves.
+- History, "Export all": a `.md` file downloads with every saved chat,
+  newest first.
+- Reset `extra-cards.json` to `[]` and delete test graphs in `diagrams/`
+  after test saves.
 
 ## Common mistakes
 | Mistake | Fix |
@@ -94,5 +103,6 @@ slide, a request trace, and PlantUML/Structurizr images.
 | Right answer always in one slot | Template shuffles; keep it |
 | Serving the whole repo for images | Only dirs in `ASSETS`; never repo root (.env) |
 | Giving Claude write tools to edit cards | Claude proposes; the learner clicks; server writes |
+| Giving Claude Bash or Write so it can draw | Claude writes the diagram source in its reply; the server draws it |
 | Old server still running after edits | Prompts load at start: restart it |
 | Code changed, references point at the wrong lines | Re-check the line numbers when the code moves |

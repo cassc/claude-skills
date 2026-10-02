@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{TITLE}}</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -29,7 +31,7 @@
     <div id="chat-grip" title="Drag to resize. Double-click to reset."></div>
     <div class="tabs">
       <button data-mode="ask" class="on">Ask about this card</button>
-      <button data-mode="quiz">Quiz me</button>
+      <button data-mode="quiz" title="Claude quizzes you on the current lesson">Quiz me</button>
     </div>
     <div id="log-ask" class="log"></div>
     <div id="log-quiz" class="log" hidden></div>
@@ -59,10 +61,12 @@
     <pre id="src-code" tabindex="0"></pre>
   </div>
 </dialog>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="cards.js"></script>
 <script src="quiz.js"></script>
 <script src="diagrams.js"></script>
 <script src="source.js"></script>
+<script src="highlight.js"></script>
 <script src="app.js"></script>
 <script src="markdown.js"></script>
 <script src="history.js"></script>
