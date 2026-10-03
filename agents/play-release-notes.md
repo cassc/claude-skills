@@ -47,8 +47,8 @@ The names differ per project. Order:
    `versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 2` means the real number
    comes from CI and the literal is only a local fallback. Report the fallback and say it
    is CI-driven — do not present it as the shipped number.
-4. **If you still cannot find it**, say so in one line and ask the user for the version
-   code. Do not invent one, and do not block the notes — print them anyway.
+4. **If you still cannot find it**, say in the output that the version code is
+   missing. Do not invent one, and do not block the notes — print them anyway.
 
 ## 3. Read the commits
 
@@ -79,8 +79,8 @@ Rules:
   "- Stability and performance improvements".
 - Order bullets by user impact: new features, then improvements, then fixes.
 - No markdown headings, no bold, no emoji, no trailing period on bullets.
-- Never invent a change that is not in the commits. If a commit is unclear, ask rather
-  than guess.
+- Never invent a change that is not in the commits. If a commit is unclear, leave it out
+  and list it under the notes as "Unclear: <sha> <subject>". You cannot ask the user.
 
 ## 5. Output
 
@@ -94,6 +94,7 @@ Range: v1.0..v1.1 (12 commits)  Version: 1.1 (versionCode 2, from CI env VERSION
 - bullet
 
 312 / 500 characters
+Unclear: abc1234 <subject>   (only if any)
 ```
 
 Plain text, copy-paste ready into Play Console.

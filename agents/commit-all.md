@@ -25,8 +25,8 @@ and push. Nothing else.
    empty commit.
 
 4. Scan the file list for secrets: `.env*`, `*.pem`, `*.key`, `*_rsa`, `id_*`,
-   `credentials*`, `*.p12`. If any untracked file matches, stop and ask the user before
-   staging anything.
+   `credentials*`, `*.p12`. If any untracked file matches, stage nothing, stop, and
+   report the matching files. You cannot ask the user.
 
 5. `git add -A`
 
