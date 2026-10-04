@@ -9,7 +9,9 @@ const STALE = 10 * 60 * 1000; // a waiting message older than this is not sent a
 let mode = "ask", leaving = false;
 
 // crypto.randomUUID needs HTTPS or localhost; this also works on plain HTTP over the local network.
-const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+// The server only takes ids shaped like a UUID (36 chars).
+const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("")
+  .replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5");
 
 function addMsg(log, text, cls) {
   const d = document.createElement("div");
