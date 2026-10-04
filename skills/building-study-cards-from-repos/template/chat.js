@@ -8,6 +8,9 @@ const live = {}; // chats with a running sender, by id
 const STALE = 10 * 60 * 1000; // a waiting message older than this is not sent again
 let mode = "ask", leaving = false;
 
+// crypto.randomUUID needs HTTPS or localhost; this also works on plain HTTP over the local network.
+const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+
 function addMsg(log, text, cls) {
   const d = document.createElement("div");
   d.className = "msg " + cls;
@@ -149,9 +152,9 @@ async function deliver(chat) {
 
 function say(text, auto) {
   const m = modes[mode], card = currentCard(), sel = $("lesson");
-  m.chat = m.chat || { id: crypto.randomUUID(), mode, time: Date.now(), sid: null, msgs: [] };
+  m.chat = m.chat || { id: newId(), mode, time: Date.now(), sid: null, msgs: [] };
   m.chat.msgs.push({
-    who: "me", text, auto, job: crypto.randomUUID(), at: Date.now(),
+    who: "me", text, auto, job: newId(), at: Date.now(),
     card: { text: card.text.slice(0, 20000), name: sel.options[sel.selectedIndex].text, ref: { lesson: card.lesson, type: card.type, index: card.index } },
   });
   save(m.chat);
