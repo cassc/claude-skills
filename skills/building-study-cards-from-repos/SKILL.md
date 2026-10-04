@@ -27,6 +27,12 @@ then the evidence. Test the *reason*, never recall of names or numbers.
 5. Run `python3 learn/server.py`, open http://127.0.0.1:8765.
    `PORT=8766` runs a second copy. Cards and quiz also work from `file://`
    (no chat).
+   For a phone on the same Wi-Fi: `HOST=0.0.0.0 python3 learn/server.py`
+   and open the printed link. It holds a token; `TOKEN=...` keeps it the
+   same between runs. Add `TLS=1` for HTTPS: the server makes a
+   self-signed cert with `openssl`, and the browser warns once. Or pass
+   your own with `CERT=cert.pem KEY=key.pem` (`mkcert` makes one the phone
+   can trust). Without HTTPS, others on the Wi-Fi can read the traffic.
 
 ## Content recipe
 Read the repo's own teaching material first (README, lesson folders,

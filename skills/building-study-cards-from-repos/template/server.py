@@ -1,23 +1,35 @@
 """Serve the study cards and let Claude Code tutor/quiz you: python3 <this dir>/server.py"""
 import hashlib
+import hmac
+import ipaddress
 import json
 import os
 import re
+import secrets
 import shutil
+import socket
+import ssl
 import subprocess
 import tempfile
 import threading
+import time
 from functools import partial
+from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-HOST, PORT = "127.0.0.1", int(os.environ.get("PORT", 8765))
+HOST, PORT = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", 8765))
+CERT, KEY = os.environ.get("CERT"), os.environ.get("KEY")  # your own cert; KEY is not needed if CERT holds the key
+TLS = bool(CERT or os.environ.get("TLS"))  # TLS=1 alone makes a self-signed cert
+SCHEME = "https" if TLS else "http"
+# Any other HOST (0.0.0.0 for the local network) needs the token: every request must carry it as a cookie.
+TOKEN = "" if HOST in ("127.0.0.1", "localhost") else os.environ.get("TOKEN") or secrets.token_urlsafe(16)
 WEB = Path(__file__).resolve().parent
 ROOT = WEB.parent
 EXTRA = WEB / "extra-cards.json"
 PROMPTS = {m: (WEB / f"{m}_prompt.md").read_text() for m in ("ask", "quiz")}
-ORIGINS = {f"http://{HOST}:{PORT}", f"http://localhost:{PORT}"}
+ORIGINS = {f"{SCHEME}://{HOST}:{PORT}", f"{SCHEME}://localhost:{PORT}"}
 HOSTS = {o.split("//")[1] for o in ORIGINS}
 ASSETS = {f"{WEB.name}/diagrams"}  # repo-relative image dirs the page may load
 MAX_SOURCE = 1_000_000  # bytes; larger files are not shown in the source popup
@@ -172,11 +184,28 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:")
         super().end_headers()
 
+    def authed(self):
+        if not TOKEN:
+            return True
+        cookie = SimpleCookie(self.headers.get("Cookie", "")).get("k")
+        return bool(cookie) and hmac.compare_digest(cookie.value, TOKEN)
+
+    def do_HEAD(self):
+        return super().do_HEAD() if self.authed() else self.send_error(403)
+
     def do_GET(self):
         url = urlsplit(self.path)
+        if TOKEN and hmac.compare_digest(parse_qs(url.query).get("k", [""])[0], TOKEN):  # the printed link: keep the token as a cookie
+            self.send_response(303)
+            self.send_header("Location", url.path)
+            self.send_header("Set-Cookie", f"k={TOKEN}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000" + ("; Secure" if TLS else ""))
+            self.send_header("Content-Length", "0")
+            return self.end_headers()
+        if not self.authed():
+            return self.send_error(403, "open the link the server printed")
         if url.path not in ("/api/source", "/api/files"):
             return super().do_GET()
-        if self.headers.get("Host") not in HOSTS:
+        if not TOKEN and self.headers.get("Host") not in HOSTS:
             return self.send_error(403, "bad host")
         try:
             if url.path == "/api/files":
@@ -196,7 +225,9 @@ class Handler(SimpleHTTPRequestHandler):
         route = {"/api/chat": chat, "/api/cards": save_card, "/api/diagram": diagram}.get(self.path)
         if not route:
             return self.send_error(404)
-        if self.headers.get("Origin") not in ORIGINS:
+        if not self.authed():
+            return self.send_error(403, "open the link the server printed")
+        if self.headers.get("Origin") not in ({f"{SCHEME}://{self.headers.get('Host')}"} if TOKEN else ORIGINS):
             return self.send_error(403, "bad origin")
         try:
             res, code = route(json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))), 200
@@ -212,6 +243,34 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(data)
 
 
+def lan_ip() -> str:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.connect(("10.255.255.255", 1))  # sends nothing; only picks the outgoing interface
+        return s.getsockname()[0]
+
+
+def self_signed(name: str) -> str:
+    """Make a cert for this address, or reuse it. It lives outside the repo, so the key cannot be committed or served."""
+    file = Path.home() / ".cache" / "study-cards" / f"{name}.pem"
+    if not file.exists() or time.time() - file.stat().st_mtime > 300 * 86400:
+        file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            kind = "IP" if ipaddress.ip_address(name) else ""
+        except ValueError:
+            kind = "DNS"
+        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "365", "-subj", f"/CN={name}",
+                        "-addext", f"subjectAltName={kind}:{name},DNS:localhost,IP:127.0.0.1", "-keyout", file, "-out", file],
+                       check=True, capture_output=True)
+    return str(file)
+
+
 if __name__ == "__main__":
-    print(f"Open http://{HOST}:{PORT}")
-    ThreadingHTTPServer((HOST, PORT), partial(Handler, directory=WEB)).serve_forever()
+    server = ThreadingHTTPServer((HOST, PORT), partial(Handler, directory=WEB))
+    name = lan_ip() if HOST in ("0.0.0.0", "") else HOST
+    if TLS:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(CERT or self_signed(name), KEY if CERT else None)
+        # handshake in the request thread, so one slow client cannot block the others
+        server.socket = ctx.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
+    print(f"Open {SCHEME}://{name}:{PORT}" + (f"/?k={TOKEN}" if TOKEN else ""))
+    server.serve_forever()
