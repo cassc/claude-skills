@@ -60,6 +60,7 @@ To add more repos later, run the skill in that repo or edit the config. The bot 
 | `/new` | Forget the chat for the current repo |
 | `/cancel` | Stop the running task |
 | any other text | Sent to Claude in the current repo |
+| a photo, file or album | Saved in `<repo>/telegram-resources/` and sent to Claude. The caption is the question |
 
 Logs: `journalctl --user -u tg-claude-bot -n 50`
 
@@ -70,7 +71,7 @@ Logs: `journalctl --user -u tg-claude-bot -n 50`
 - Here one bot serves all repos, and `/repos` switches between them.
 - Read or write is set per repo in one config file. The plugin gets it from how you started each session.
 - Nothing has to stay open. Each message starts `claude -p`, and a systemd service keeps the bot running. No Bun, no tmux.
-- The plugin does more inside a chat: it can send files, read photos, react and use groups. Pick the plugin if you need those.
+- The plugin does more inside a chat: it can send files back, react and use groups. Pick the plugin if you need those.
 
 **Claude Code Remote Control (the Claude app)**
 - Remote Control drives a session you already started on your computer. It is good for following one live task.
@@ -82,4 +83,5 @@ Logs: `journalctl --user -u tg-claude-bot -n 50`
 
 - Messages from ids not listed in `users` are ignored.
 - The token is only in the config file (`chmod 600`), outside every repo.
+- Files you send are saved in `<repo>/telegram-resources/` with a random name and mode `600` (not executable). The bot refuses to write if that folder is a symbolic link. Git ignores the folder through `.git/info/exclude`. The bot never deletes these files; clean the folder by hand. Max 20 MB per file.
 - `write` mode means anyone in `users` can run any command on this machine as you. Keep the list short, and keep your Telegram account safe (2FA).
