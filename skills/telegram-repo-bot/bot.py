@@ -25,11 +25,12 @@ STATE = Path(os.environ.get("TG_CLAUDE_STATE", "~/.local/state/tg-claude-bot/sta
 _gai = socket.getaddrinfo
 socket.getaddrinfo = lambda *a, **k: [r for r in _gai(*a, **k) if r[0] == socket.AF_INET] or _gai(*a, **k)
 
+FORMAT = "Reply short. Simple Markdown is fine: bold, lists, inline code, code blocks. No tables, no nested lists, no images."
 PROMPTS = {
     "read": "You answer the repo owner through Telegram. This is read-only: do not try to change files. "
-            "Reply in short plain text, no Markdown tables.",
+            + FORMAT,
     "write": "You work for the repo owner through Telegram. You may edit files, run commands and commit. "
-             "Say briefly what you changed. Reply in short plain text, no Markdown tables.",
+             "Say briefly what you changed. " + FORMAT,
 }
 READ_TOOLS = ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Bash(ls:*)",
               *(f"Bash(git {c}:*)" for c in ("log", "show", "diff", "status", "blame", "branch"))]
@@ -68,6 +69,69 @@ def api(method, http_timeout=20, **data):
         raise RuntimeError(f"telegram {e.code}: {json.load(e).get('description')}") from None
     except OSError as e:
         raise RuntimeError(f"telegram request failed: {type(e).__name__}") from None  # hide token in URL
+
+
+def esc(s):
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def to_html(md):
+    """Claude's Markdown as Telegram HTML. Code and link targets are taken out first, so no other rule touches them."""
+    keep = []
+
+    def stash(html):
+        keep.append(html)
+        return f"\x00{len(keep) - 1}\x00"
+
+    def pre(m):
+        return stash(f'<pre><code class="language-{m[1]}">{esc(m[2])}</code></pre>' if m[1] else f"<pre>{esc(m[2])}</pre>")
+
+    def quote(m):
+        body = re.sub(r"^&gt; ?", "", m[0], flags=re.M).rstrip("\n")
+        return f"<blockquote>{body}</blockquote>" + "\n" * m[0].endswith("\n")
+
+    md = md.replace("\x00", "")
+    md = re.sub(r"^[ \t]*```([\w+#.-]*)[^\n]*\n(.*?)\n?^[ \t]*```[ \t]*$", pre, md, flags=re.M | re.S)
+    md = re.sub(r"`([^`\n]+)`", lambda m: stash(f"<code>{esc(m[1])}</code>"), md)
+    md = esc(md)
+    md = re.sub(r"\[([^\]\n]+)\]\((https?://[^\s)]+)\)",
+                lambda m: stash('<a href="%s">' % m[2].replace('"', "&quot;")) + m[1] + "</a>", md)
+    md = re.sub(r"^#{1,6}[ \t]+(.+?)[ \t#]*$", lambda m: "<b>%s</b>" % re.sub(r"\*\*|__", "", m[1]), md, flags=re.M)
+    md = re.sub(r"^([ \t]*)[-*+][ \t]+", "\\1\u2022 ", md, flags=re.M)
+    md = re.sub(r"\*\*(?=\S)(.+?)(?<=\S)\*\*", r"<b>\1</b>", md)
+    md = re.sub(r"(?<!\w)__(?=\S)(.+?)(?<=\S)__(?!\w)", r"<b>\1</b>", md)
+    md = re.sub(r"(?<![\w*])\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?![\w*])", r"<i>\1</i>", md)
+    md = re.sub(r"(?<!\w)_(?=[^\s_])(.+?)(?<=[^\s_])_(?!\w)", r"<i>\1</i>", md)  # word edges: snake_case stays
+    md = re.sub(r"~~(?=\S)(.+?)(?<=\S)~~", r"<s>\1</s>", md)
+    md = re.sub(r"(?:^&gt;[^\n]*\n?)+", quote, md, flags=re.M)
+    return re.sub(r"\x00(\d+)\x00", lambda m: keep[int(m[1])], md)
+
+
+def split_md(text, limit=3500):
+    """Cut Markdown into parts on line ends. A code fence open at a cut is closed, then opened again in the next part."""
+    parts, cur, fence = [], "", None
+    for line in text.splitlines(keepends=True):
+        mark = re.match(r"[ \t]*```([\w+#.-]*)", line)
+        while line:
+            piece, line = line[:limit], line[limit:]
+            if cur and len(cur) + len(piece) > limit and not (fence and mark):  # a closing fence may go over
+                parts.append(cur.rstrip("\n") + "\n```" if fence else cur)
+                cur = fence + "\n" if fence else ""
+            cur += piece
+        if mark:
+            fence = None if fence else "```" + mark[1]
+    return parts + [cur] if cur.strip() else parts
+
+
+def post(method, text, md, **kw):
+    """Send or edit one message. Markdown goes as HTML; if Telegram rejects that, as plain text."""
+    if md:
+        try:
+            return api(method, text=to_html(text), parse_mode="HTML", **kw)
+        except RuntimeError as e:
+            if "telegram 400" not in str(e):
+                raise
+    return api(method, text=text, **kw)
 
 
 def send(chat, text, reply_to=None, buttons=None):
@@ -190,10 +254,10 @@ def ask(chat, name, repo, text, files, reply_to):
                 ans = f"claude failed ({p.returncode}): {(err or out)[-300:]}"
             save()
         print(f"{name}: {len(text)} chars asked, {len(ans)} answered ({time.time() - t:.0f}s)", flush=True)
-        full = f"[{name}]\n{ans}"
-        api("editMessageText", chat_id=chat, message_id=mid, text=full[:4000])
-        if full[4000:]:
-            send(chat, full[4000:])
+        head, *rest = split_md(f"[{name}]\n{ans}")
+        post("editMessageText", head, True, chat_id=chat, message_id=mid)
+        for part in rest:
+            post("sendMessage", part, True, chat_id=chat)
     except Exception as e:
         traceback.print_exc()
         try:
