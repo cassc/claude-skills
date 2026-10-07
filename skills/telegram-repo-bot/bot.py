@@ -35,7 +35,8 @@ PROMPTS = {
 READ_TOOLS = ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Bash(ls:*)",
               *(f"Bash(git {c}:*)" for c in ("log", "show", "diff", "status", "blame", "branch"))]
 COMMANDS = {"repos": "List repos and switch", "repo": "Switch repo: /repo <name>", "status": "Current repo and mode",
-            "new": "Forget the chat for the current repo", "cancel": "Stop the running task"}
+            "new": "Forget the chat for the current repo", "compact": "Shorten the chat for the current repo",
+            "cancel": "Stop the running task"}
 
 RES = "telegram-resources"  # folder in the repo for files sent to the bot
 MAX_FILE = 20 * 1024 * 1024  # Telegram bots cannot download more
@@ -247,7 +248,7 @@ def ask(chat, name, repo, text, files, reply_to):
             ans = "Stopped." if out is not None else "Timed out."
         else:
             try:
-                ans = json.loads(out).get("result") or "(no answer)"
+                ans = json.loads(out).get("result") or ("Compacted." if text == "/compact" else "(no answer)")
                 state["session"][key] = json.loads(out)["session_id"]
             except (ValueError, KeyError):
                 state["session"].pop(key, None)  # e.g. the saved session is gone; next message starts fresh
@@ -334,7 +335,9 @@ def on_message(m, files=None):
         if p:
             p.kill()
         send(chat, "Stopping." if p else "Nothing is running.")
-    elif cmd.startswith("/") and cmd != "/start" or not text and not files:
+    elif cmd == "/compact" and f"{chat}:{name}" not in state["session"]:
+        send(chat, "Nothing to compact.")
+    elif cmd.startswith("/") and cmd not in ("/start", "/compact") or not text and not files:
         send(chat, "Commands:\n" + "\n".join(f"/{k} - {v}" for k, v in COMMANDS.items())
              + "\nAny other text, photo or file goes to Claude.")
     elif not name:
@@ -348,6 +351,8 @@ def on_message(m, files=None):
             return send(chat, "Still working. Send /cancel to stop it.", m["message_id"])
         if cmd == "/start":
             text = "Say hi and tell me in one line what this repo is."
+        if cmd == "/compact":
+            text, files = "/compact", []  # Claude Code runs it and returns an empty result
         threading.Thread(target=ask, args=(chat, name, c["repos"][name], text or "Look at these files.", files,
                                            m["message_id"]), daemon=True).start()
 
