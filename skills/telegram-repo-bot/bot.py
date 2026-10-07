@@ -35,7 +35,7 @@ PROMPTS = {
 READ_TOOLS = ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Bash(ls:*)",
               *(f"Bash(git {c}:*)" for c in ("log", "show", "diff", "status", "blame", "branch"))]
 COMMANDS = {"repos": "List repos and switch", "repo": "Switch repo: /repo <name>", "status": "Current repo and mode",
-            "new": "Forget the chat for the current repo", "compact": "Shorten the chat for the current repo",
+            "new": "Forget the chat for the current repo", "compact": "Shorten the chat: /compact [what to keep]",
             "cancel": "Stop the running task"}
 
 RES = "telegram-resources"  # folder in the repo for files sent to the bot
@@ -248,7 +248,7 @@ def ask(chat, name, repo, text, files, reply_to):
             ans = "Stopped." if out is not None else "Timed out."
         else:
             try:
-                ans = json.loads(out).get("result") or ("Compacted." if text == "/compact" else "(no answer)")
+                ans = json.loads(out).get("result") or ("Compacted." if text.startswith("/compact") else "(no answer)")
                 state["session"][key] = json.loads(out)["session_id"]
             except (ValueError, KeyError):
                 state["session"].pop(key, None)  # e.g. the saved session is gone; next message starts fresh
@@ -352,7 +352,7 @@ def on_message(m, files=None):
         if cmd == "/start":
             text = "Say hi and tell me in one line what this repo is."
         if cmd == "/compact":
-            text, files = "/compact", []  # Claude Code runs it and returns an empty result
+            text, files = f"/compact {arg.strip()}".strip(), []  # Claude Code runs it and returns an empty result
         threading.Thread(target=ask, args=(chat, name, c["repos"][name], text or "Look at these files.", files,
                                            m["message_id"]), daemon=True).start()
 

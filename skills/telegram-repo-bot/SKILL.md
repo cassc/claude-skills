@@ -47,4 +47,4 @@ After editing `bot.py`: `systemctl --user restart tg-claude-bot`.
 - `claude failed`: check `claude` is on the unit's PATH and logged in.
 
 ## Bot commands
-`/repos` (buttons to switch), `/repo <name>`, `/status`, `/new` (forget chat for the current repo), `/compact` (shorten the chat, keep a summary), `/cancel`. Any other text goes to Claude in the current repo. Photos, files and albums are saved in `<repo>/telegram-resources/` (mode 600, ignored by git) and Claude gets their paths. Follow-up messages keep the chat until `/new`.
+`/repos` (buttons to switch), `/repo <name>`, `/status`, `/new` (forget chat for the current repo), `/compact [what to keep]` (shorten the chat, keep a summary), `/cancel`. Any other text goes to Claude in the current repo. Photos, files and albums are saved in `<repo>/telegram-resources/` (mode 600, ignored by git) and Claude gets their paths. Follow-up messages keep the chat until `/new`.
