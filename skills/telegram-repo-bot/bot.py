@@ -36,7 +36,7 @@ READ_TOOLS = ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Bash(ls:*)",
               *(f"Bash(git {c}:*)" for c in ("log", "show", "diff", "status", "blame", "branch"))]
 COMMANDS = {"repos": "List repos and switch", "repo": "Switch repo: /repo <name>", "status": "Current repo and mode",
             "new": "Forget the chat for the current repo", "compact": "Shorten the chat: /compact [what to keep]",
-            "cancel": "Stop the running task"}
+            "cancel": "Stop the running task and clear the queue"}
 
 RES = "telegram-resources"  # folder in the repo for files sent to the bot
 MAX_FILE = 20 * 1024 * 1024  # Telegram bots cannot download more
@@ -45,6 +45,8 @@ FILE_KINDS = ("photo", "document", "video", "audio", "voice", "animation", "vide
 state = json.loads(STATE.read_text()) if STATE.exists() else {"offset": 0, "repo": {}, "session": {}}
 state_lock = threading.Lock()
 running = {}  # chat id -> Popen (None while starting)
+queue = {}  # chat id -> jobs waiting for the running one: (name, repo, text, files, reply_to)
+cancelled = set()  # chats where /cancel came before claude started
 albums = {}  # media_group_id -> (messages, Timer)
 lock = threading.Lock()  # album timers run outside the poll thread
 
@@ -237,7 +239,10 @@ def ask(chat, name, repo, text, files, reply_to):
             text += f"\n{RES}/{download(repo['path'], f).name} (name: {clean['file_name']}, type: {clean['mime_type']})"
         p = subprocess.Popen(claude_cmd(repo, state["session"].get(key)), cwd=Path(repo["path"]).expanduser(),
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        running[chat] = p
+        with lock:
+            running[chat] = p
+            if chat in cancelled:
+                p.kill()
         try:
             out, err = p.communicate(text, timeout=conf().get("timeout", 1800))
         except subprocess.TimeoutExpired:
@@ -265,8 +270,19 @@ def ask(chat, name, repo, text, files, reply_to):
             send(chat, f"Failed: {e}"[:4000])
         except Exception:
             pass
-    finally:
-        running.pop(chat, None)
+
+
+def work(chat, job):
+    """Run a job, then the queued ones. The chat stays busy until the queue is empty."""
+    while job:
+        ask(chat, *job)
+        with lock:
+            cancelled.discard(chat)
+            job = queue[chat].pop(0) if queue.get(chat) else None
+            if job:
+                running[chat] = None
+            else:
+                running.pop(chat, None)
 
 
 def repo_buttons(c, cur):
@@ -325,16 +341,22 @@ def on_message(m, files=None):
         send(chat, switch(chat, c, arg.strip()) if arg.strip() else "Use: /repo <name>")
     elif cmd == "/status":
         mode = c["repos"][name].get("mode", "read") if name else "-"
-        send(chat, f"Repo: {name or 'none'} ({mode}). {'Busy.' if chat in running else 'Idle.'}")
+        n = len(queue.get(chat, []))
+        send(chat, f"Repo: {name or 'none'} ({mode}). {'Busy.' if chat in running else 'Idle.'}"
+             + f" {n} queued." * bool(n))
     elif cmd == "/new":
         state["session"].pop(f"{chat}:{name}", None)
         save()
         send(chat, f"New chat for {name}.")
     elif cmd == "/cancel":
-        p = running.get(chat)
+        with lock:
+            busy, p = chat in running, running.get(chat)
+            n = len(queue.pop(chat, []))
+            if busy:
+                cancelled.add(chat)
         if p:
             p.kill()
-        send(chat, "Stopping." if p else "Nothing is running.")
+        send(chat, "Stopping." + f" Dropped {n} queued." * bool(n) if busy else "Nothing is running.")
     elif cmd == "/compact" and f"{chat}:{name}" not in state["session"]:
         send(chat, "Nothing to compact.")
     elif cmd.startswith("/") and cmd not in ("/start", "/compact") or not text and not files:
@@ -343,18 +365,21 @@ def on_message(m, files=None):
     elif not name:
         send(chat, "Pick a repo first:", buttons=repo_buttons(c, name))
     else:
-        with lock:
-            busy = chat in running
-            if not busy:
-                running[chat] = None
-        if busy:
-            return send(chat, "Still working. Send /cancel to stop it.", m["message_id"])
         if cmd == "/start":
             text = "Say hi and tell me in one line what this repo is."
         if cmd == "/compact":
             text, files = f"/compact {arg.strip()}".strip(), []  # Claude Code runs it and returns an empty result
-        threading.Thread(target=ask, args=(chat, name, c["repos"][name], text or "Look at these files.", files,
-                                           m["message_id"]), daemon=True).start()
+        job = (name, c["repos"][name], text or "Look at these files.", files, m["message_id"])
+        with lock:
+            busy = chat in running
+            if busy:
+                queue.setdefault(chat, []).append(job)
+                n = len(queue[chat])
+            else:
+                running[chat] = None
+        if busy:
+            return send(chat, f"Queued ({n} waiting).", m["message_id"])
+        threading.Thread(target=work, args=(chat, job), daemon=True).start()
 
 
 def on_callback(cb):

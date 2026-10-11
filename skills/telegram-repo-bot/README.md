@@ -59,7 +59,7 @@ To add more repos later, run the skill in that repo or edit the config. The bot 
 | `/status` | Current repo, mode, busy or idle |
 | `/new` | Forget the chat for the current repo |
 | `/compact [what to keep]` | Shorten the chat for the current repo, keep a summary |
-| `/cancel` | Stop the running task |
+| `/cancel` | Stop the running task and clear the queue |
 | any other text | Sent to Claude in the current repo |
 | a photo, file or album | Saved in `<repo>/telegram-resources/` and sent to Claude. The caption is the question |
 
