@@ -21,10 +21,32 @@ from urllib.parse import parse_qs, urlsplit
 
 HOST, PORT = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", 8765))
 CERT, KEY = os.environ.get("CERT"), os.environ.get("KEY")  # your own cert; KEY is not needed if CERT holds the key
-TLS = bool(CERT or os.environ.get("TLS"))  # TLS=1 alone makes a self-signed cert
+# PUBLIC_URL: the address a proxy or tunnel serves this at (https://cards.example.com). It turns the login on;
+# the proxy does TLS, and only requests from 127.0.0.1 may say the real client IP and scheme.
+PUBLIC = os.environ.get("PUBLIC_URL", "").rstrip("/")
+LOCAL = HOST in ("127.0.0.1", "localhost") and not PUBLIC
+# On the network, HTTPS by default with a self-signed cert unless CERT is given; TLS=0 turns it off.
+TLS = bool(CERT) or os.environ.get("TLS", "" if LOCAL or PUBLIC else "1") not in ("", "0")
 SCHEME = "https" if TLS else "http"
-# Any other HOST (0.0.0.0 for the local network) needs the token: every request must carry it as a cookie.
-TOKEN = "" if HOST in ("127.0.0.1", "localhost") else os.environ.get("TOKEN") or secrets.token_urlsafe(16)
+SECURE = TLS or PUBLIC.startswith("https://")  # cookies only over HTTPS
+
+
+def saved_secret() -> str:
+    """The key that signs login cookies. It lives outside the repo; delete the file to sign everyone out."""
+    file = Path.home() / ".cache" / "study-cards" / "secret"
+    if not file.exists():
+        file.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.write(fd, secrets.token_urlsafe(32).encode())
+        os.close(fd)
+    return file.read_text().strip()
+
+
+# Any other HOST (0.0.0.0 for the local network) or a PUBLIC_URL needs a login: a phone pairs by the QR the
+# server prints, then signs in other browsers by scanning their QR. TOKEN only signs the cookies; it is never sent.
+TOKEN = "" if LOCAL else os.environ.get("TOKEN") or saved_secret()
+LIFE = {"p": float(os.environ.get("PHONE_DAYS", 365)) * 86400, "d": float(os.environ.get("LOGIN_HOURS", 24)) * 3600}
+PAIR_TTL, LOGIN_TTL, MAX_LOGINS = 600, 120, 20  # seconds a pair link / a sign-in QR works; sign-ins waiting at once
 WEB = Path(__file__).resolve().parent
 ROOT = WEB.parent
 EXTRA = WEB / "extra-cards.json"
@@ -46,7 +68,92 @@ UNSAFE_SVG = re.compile(r"<script|<foreignObject|\bon\w+\s*=|javascript:|(?:href
 PROMPTS["ask"] += f"\nDiagram tools on this machine: {', '.join(k for k, c in TOOLS.items() if shutil.which(c[0])) or 'none'}.\n"
 KEEP = 20  # chat results kept in memory, by message id
 jobs: dict[str, dict] = {}
+pairing = {"code": "", "exp": 0.0}
+logins: dict[str, dict] = {}  # wait id (only the browser that signs in knows it) -> {code, exp, who, ok}
 lock = threading.Lock()
+
+
+def sign(text: str) -> str:
+    return hmac.new(TOKEN.encode(), text.encode(), hashlib.sha256).hexdigest()
+
+
+def make_cookie(role: str) -> str:
+    """role p = phone (may sign in other browsers), d = desktop."""
+    age = int(LIFE[role])
+    text = f"{role}.{int(time.time()) + age}"
+    return f"k={text}.{sign(text)}; Path=/; HttpOnly; SameSite=Lax; Max-Age={age}" + ("; Secure" if SECURE else "")
+
+
+def same(a: str, b: str) -> bool:
+    return hmac.compare_digest(a.encode(), b.encode())
+
+
+def new_pair(base: str):
+    with lock:
+        pairing.update(code=secrets.token_urlsafe(16), exp=time.time() + PAIR_TTL)
+        link = f"{base}/pair?c={pairing['code']}"
+    try:
+        subprocess.run(["qrencode", "-t", "ansiutf8", link], check=True)
+    except (OSError, subprocess.CalledProcessError):
+        pass  # no qrencode: the link alone
+    print(f"Pair your phone: scan the QR or open {link}\n(works once, for {PAIR_TTL // 60} min; press Enter for a new one)", flush=True)
+
+
+def pair_on_enter(base: str):
+    try:
+        while True:
+            input()
+            new_pair(base)
+    except EOFError:  # no terminal, e.g. a service
+        pass
+
+
+def use_pair(code: str) -> bool:
+    with lock:
+        ok = bool(pairing["code"]) and same(code, pairing["code"]) and pairing["exp"] > time.time()
+        if ok:
+            pairing["code"] = ""
+    return ok
+
+
+def login_start(body: dict) -> dict:
+    now = time.time()
+    with lock:
+        for w in [w for w, x in logins.items() if x["exp"] < now]:
+            del logins[w]
+        if len(logins) >= MAX_LOGINS:
+            raise ValueError("too many sign-ins waiting; try again in 2 minutes")
+        wait, code = secrets.token_urlsafe(24), secrets.token_urlsafe(12)
+        logins[wait] = {"code": code, "exp": now + LOGIN_TTL, "who": body["who"], "ok": False}
+    return {"wait": wait, "code": code}
+
+
+def login_approve(body: dict) -> dict:
+    """The phone sends {code} to see who asks, then {code, allow: true/false}."""
+    code, allow = body.get("code"), body.get("allow")
+    if not isinstance(code, str):
+        raise ValueError("bad code")
+    with lock:
+        wait = next((w for w, x in logins.items() if same(code, x["code"]) and x["exp"] > time.time() and not x["ok"]), None)
+        if not wait:
+            raise ValueError("this code is used or expired")
+        x = logins[wait]
+        if allow is True:
+            x.update(ok=True, exp=time.time() + 30)  # time for the browser's next poll
+        elif allow is False:
+            del logins[wait]
+    return {"who": x["who"]}
+
+
+def login_poll(body: dict) -> dict:
+    wait = body.get("wait")
+    with lock:
+        if not isinstance(wait, str) or not (x := logins.get(wait)) or x["exp"] < time.time():
+            return {"state": "expired"}
+        if x["ok"]:
+            del logins[wait]
+            return {"state": "ok"}
+    return {"state": "wait"}
 
 
 def ask_claude(message: str, mode: str, session_id: str | None) -> dict:
@@ -182,27 +289,47 @@ class Handler(SimpleHTTPRequestHandler):
     def end_headers(self):
         if self.path.split("?")[0].endswith(".svg"):  # an SVG opened as a page must not run scripts or load outside files
             self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:")
+        # / is the login page or the app, by cookie: never reuse it. private: a proxy (Cloudflare) must not share files.
+        page = self.path.split("?")[0]
+        self.send_header("Cache-Control", "no-store" if page.endswith(("/", ".html")) else "private, no-cache")
         super().end_headers()
 
-    def authed(self):
+    def role(self) -> str:
+        """p (phone), d (desktop), or "" (not signed in). With no login needed, everyone counts as a phone."""
         if not TOKEN:
-            return True
+            return "p"
         cookie = SimpleCookie(self.headers.get("Cookie", "")).get("k")
-        return bool(cookie) and hmac.compare_digest(cookie.value, TOKEN)
+        role, _, rest = (cookie.value if cookie else "").partition(".")
+        exp, _, sig = rest.partition(".")
+        ok = role in LIFE and exp.isdigit() and int(exp) > time.time() and same(sig, sign(f"{role}.{exp}"))
+        return role if ok else ""
+
+    def client_ip(self) -> str:
+        ip = self.client_address[0]
+        if PUBLIC and ip in ("127.0.0.1", "::1"):  # the proxy: trust the address it passes on
+            fwd = self.headers.get("CF-Connecting-IP") or self.headers.get("X-Forwarded-For", "").split(",")[0]
+            ip = fwd.strip()[:64] or ip
+        return ip
 
     def do_HEAD(self):
-        return super().do_HEAD() if self.authed() else self.send_error(403)
+        return super().do_HEAD() if self.role() else self.send_error(403)
 
     def do_GET(self):
         url = urlsplit(self.path)
-        if TOKEN and hmac.compare_digest(parse_qs(url.query).get("k", [""])[0], TOKEN):  # the printed link: keep the token as a cookie
+        if TOKEN and url.path == "/pair":  # the QR the server printed
+            if not use_pair(parse_qs(url.query).get("c", [""])[0]):
+                return self.send_error(403, "this pair link is used or expired: press Enter where the server runs")
             self.send_response(303)
-            self.send_header("Location", url.path)
-            self.send_header("Set-Cookie", f"k={TOKEN}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000" + ("; Secure" if TLS else ""))
+            self.send_header("Location", "/")
+            self.send_header("Set-Cookie", make_cookie("p"))
             self.send_header("Content-Length", "0")
             return self.end_headers()
-        if not self.authed():
-            return self.send_error(403, "open the link the server printed")
+        role = self.role()
+        if not role and url.path in ("/", "/login.html", "/approve.html", "/style.css"):  # approve.html says when a browser is not paired
+            self.path = "/login.html" if url.path == "/" else url.path
+            return super().do_GET()
+        if not role:
+            return self.send_error(403, "sign in: scan the QR on / with your paired phone")
         if url.path not in ("/api/source", "/api/files"):
             return super().do_GET()
         if not TOKEN and self.headers.get("Host") not in HOSTS:
@@ -222,21 +349,30 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self):
-        route = {"/api/chat": chat, "/api/cards": save_card, "/api/diagram": diagram}.get(self.path)
+        route = {"/api/chat": chat, "/api/cards": save_card, "/api/diagram": diagram, "/api/login/start": login_start,
+                 "/api/login/poll": login_poll, "/api/login/approve": login_approve}.get(self.path)
         if not route:
             return self.send_error(404)
-        if not self.authed():
-            return self.send_error(403, "open the link the server printed")
-        if self.headers.get("Origin") not in ({f"{SCHEME}://{self.headers.get('Host')}"} if TOKEN else ORIGINS):
+        role = self.role()
+        if route not in (login_start, login_poll) and (not role or (route is login_approve and role != "p")):
+            return self.send_error(403, "sign in: scan the QR on / with your paired phone")
+        if self.headers.get("Origin") not in ({f"{SCHEME}://{self.headers.get('Host')}", PUBLIC} - {""} if TOKEN else ORIGINS):
             return self.send_error(403, "bad origin")
         try:
-            res, code = route(json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))), 200
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            if not isinstance(body, dict):
+                raise ValueError("bad body")
+            if route is login_start:
+                body["who"] = f"{self.client_ip()}, {self.headers.get('User-Agent', '?')[:200]}"
+            res, code = route(body), 200
         except ValueError as e:  # includes JSONDecodeError
             res, code = {"error": str(e)}, 400
         except (RuntimeError, subprocess.TimeoutExpired) as e:
             res, code = {"error": str(e)}, 500
         data = json.dumps(res).encode()
         self.send_response(code)
+        if route is login_poll and res.get("state") == "ok":
+            self.send_header("Set-Cookie", make_cookie("d"))
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
@@ -272,5 +408,9 @@ if __name__ == "__main__":
         ctx.load_cert_chain(CERT or self_signed(name), KEY if CERT else None)
         # handshake in the request thread, so one slow client cannot block the others
         server.socket = ctx.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
-    print(f"Open {SCHEME}://{name}:{PORT}" + (f"/?k={TOKEN}" if TOKEN else ""))
+    base = PUBLIC or f"{SCHEME}://{name}:{PORT}"
+    print(f"Open {base}", flush=True)
+    if TOKEN:
+        new_pair(base)
+        threading.Thread(target=pair_on_enter, args=(base,), daemon=True).start()
     server.serve_forever()

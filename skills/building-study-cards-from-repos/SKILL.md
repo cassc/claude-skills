@@ -27,12 +27,18 @@ then the evidence. Test the *reason*, never recall of names or numbers.
 5. Run `python3 learn/server.py`, open http://127.0.0.1:8765.
    `PORT=8766` runs a second copy. Cards and quiz also work from `file://`
    (no chat).
-   For a phone on the same Wi-Fi: `HOST=0.0.0.0 python3 learn/server.py`
-   and open the printed link. It holds a token; `TOKEN=...` keeps it the
-   same between runs. Add `TLS=1` for HTTPS: the server makes a
-   self-signed cert with `openssl`, and the browser warns once. Or pass
+   For the local network: `HOST=0.0.0.0 python3 learn/server.py`. Scan
+   the QR it prints with your phone to pair it. Other browsers show a QR at
+   `/`; scan it with the paired phone and tap Allow. Logins last
+   `LOGIN_HOURS` (24) on desktops, `PHONE_DAYS` (365) on the phone. Design:
+   `phone-login.md`. It uses HTTPS by default: the server makes a
+   self-signed cert with `openssl`, and each browser warns once. Or pass
    your own with `CERT=cert.pem KEY=key.pem` (`mkcert` makes one the phone
-   can trust). Without HTTPS, others on the Wi-Fi can read the traffic.
+   can trust). `TLS=0` turns HTTPS off; then others on the Wi-Fi can read
+   the traffic.
+   Behind a proxy or tunnel (nginx, Cloudflare): keep `HOST` at 127.0.0.1
+   and set `PUBLIC_URL=https://cards.example.com`. This turns the login on.
+   Without it, anyone who reaches the proxy sees the site with no login.
 
 ## Content recipe
 Read the repo's own teaching material first (README, lesson folders,
@@ -74,7 +80,8 @@ slide, a request trace, and PlantUML/Structurizr images.
 | `markdown.js` | renders chat replies: code blocks, inline code, bold, lists, tables |
 | `highlight.js` | code colors in cards and the source popup, by highlight.js from a CDN; with no internet, code is plain text |
 | `source.js` | makes `<code>path:line</code>` clickable; popup shows the file and a folding file tree (Files button), and can open in a new tab |
-| `server.py` | static files, `/api/chat` (`claude -p --resume`, tools Read/Grep/Glob; keeps each result by message id), `/api/cards`, `/api/diagram` (draws a graph Claude wrote in chat: a local tool, or Claude's own SVG after a safety check), `/api/files` and `/api/source` (read-only: repo files git does not ignore, for the popup) |
+| `login.html` / `approve.html` | sign-in QR for a new browser / the phone's Allow page (see `phone-login.md`) |
+| `server.py` | static files, phone pairing and QR sign-in, `/api/chat` (`claude -p --resume`, tools Read/Grep/Glob; keeps each result by message id), `/api/cards`, `/api/diagram` (draws a graph Claude wrote in chat: a local tool, or Claude's own SVG after a safety check), `/api/files` and `/api/source` (read-only: repo files git does not ignore, for the popup) |
 
 ## Verify
 - `node -e` eval the three data files; every `a < o.length`.
@@ -98,6 +105,8 @@ slide, a request trace, and PlantUML/Structurizr images.
 - History: reload the page, open History, open the chat: the reply is there.
 - History, "Export all": a `.md` file downloads with every saved chat,
   newest first.
+- `HOST=0.0.0.0`: scan the terminal QR with the phone, the cards open. On
+  a desktop, `/` shows a QR; scan it, tap Allow, the desktop opens the cards.
 - Reset `extra-cards.json` to `[]` and delete test graphs in `diagrams/`
   after test saves.
 
@@ -111,4 +120,5 @@ slide, a request trace, and PlantUML/Structurizr images.
 | Giving Claude write tools to edit cards | Claude proposes; the learner clicks; server writes |
 | Giving Claude Bash or Write so it can draw | Claude writes the diagram source in its reply; the server draws it |
 | Old server still running after edits | Prompts load at start: restart it |
+| Pair link sent through Telegram/Slack says "used or expired" | The link preview used it: scan the QR (`phone-login.md`) |
 | Code changed, references point at the wrong lines | Re-check the line numbers when the code moves |

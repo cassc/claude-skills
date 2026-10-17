@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="login">
+  <h1>Sign in</h1>
+  <p>Scan this with your paired phone, then tap Allow.</p>
+  <div id="qr"></div>
+  <p id="msg" class="hint"></p>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script>
+const post = (path, body) => fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)}).then(r => r.json());
+const qr = document.getElementById("qr"), msg = document.getElementById("msg");
+
+async function start() {
+  const {wait, code, error} = await post("/api/login/start", {});
+  if (error) return msg.textContent = error;
+  const q = qrcode(0, "M");
+  q.addData(`${location.origin}/approve.html?c=${code}`);
+  q.make();
+  qr.innerHTML = q.createSvgTag(4, 0);
+  msg.textContent = "Waiting for your phone...";
+  const timer = setInterval(async () => {
+    const {state} = await post("/api/login/poll", {wait});
+    if (state === "ok") location.href = "/";
+    if (state !== "expired") return;
+    clearInterval(timer);
+    qr.innerHTML = "";
+    msg.innerHTML = 'The code expired. <button id="again">New code</button>';
+    document.getElementById("again").onclick = start;
+  }, 2000);
+}
+start();
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Allow sign-in?</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="login">
+  <h1>Sign in this browser?</h1>
+  <p id="who"></p>
+  <p><button id="allow">Allow</button> <button id="deny">Deny</button></p>
+  <p id="msg"></p>
+</div>
+<script>
+const post = body => fetch("/api/login/approve", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})
+  .then(r => r.status === 403 ? {error: "This browser is not paired. Scan the QR in the server terminal first, then scan this code again."} : r.json());
+const code = new URLSearchParams(location.search).get("c") || "";
+const allow = document.getElementById("allow"), deny = document.getElementById("deny");
+const done = text => { document.getElementById("msg").textContent = text; allow.disabled = deny.disabled = true; };
+
+post({code}).then(r => r.error ? done(r.error)
+  : document.getElementById("who").textContent = `From ${r.who}. Allow only if this is your own browser, in front of you.`);
+const home = text => r => r.error ? done(r.error) : (done(text), setTimeout(() => location.href = "/", 1500));
+allow.onclick = () => post({code, allow: true}).then(home("Done. The browser is signed in."));
+deny.onclick = () => post({code, allow: false}).then(home("Denied."));
+</script>
+</body>
+</html>
