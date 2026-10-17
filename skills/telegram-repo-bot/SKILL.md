@@ -37,6 +37,14 @@ Config: `~/.config/tg-claude-bot/config.json` (chmod 600). The bot re-reads it o
    Tell the user to run `loginctl enable-linger $USER` so it runs without a login.
 7. Run `python3 <skill dir>/bot.py --check`. Tell the user to send `/repos` to the bot.
 
+## Voice messages (optional)
+Voice notes, audio files and round videos are transcribed with faster-whisper; the bot replies "Heard: ..." and sends the text (plus any caption) to Claude. Whisper lives in its own venv so `bot.py` stays stdlib-only (confirm the install with the user first):
+```
+uv venv ~/.local/share/tg-claude-bot/venv
+uv pip install --python ~/.local/share/tg-claude-bot/venv/bin/python faster-whisper 'av<16'
+```
+`av<16`: newer PyAV breaks faster-whisper 1.2.1. The model downloads on first use (`small` is about 500 MB). Config `"whisper_model"`: `small` (default), `base` (faster), `medium` (more accurate). `TG_CLAUDE_WHISPER` env sets another Python path. `transcribe.py` runs in that venv and marks silences as `[pause 1.4s]`; config `"pause_min"` (seconds, default 0.7) sets the shortest pause shown.
+
 ## Other changes
 Edit the config: remove a repo, change `mode`, add or remove a user id. No restart needed.
 After editing `bot.py`: `systemctl --user restart tg-claude-bot`.
@@ -47,4 +55,4 @@ After editing `bot.py`: `systemctl --user restart tg-claude-bot`.
 - `claude failed`: check `claude` is on the unit's PATH and logged in.
 
 ## Bot commands
-`/repos` (buttons to switch), `/repo <name>`, `/status`, `/new` (forget chat for the current repo), `/compact [what to keep]` (shorten the chat, keep a summary), `/cancel`. Any other text goes to Claude in the current repo. Photos, files and albums are saved in `<repo>/telegram-resources/` (mode 600, ignored by git) and Claude gets their paths. Follow-up messages keep the chat until `/new`. Messages sent while a task runs are queued and run in order; `/cancel` also clears the queue.
+`/repos` (buttons to switch), `/repo <name>`, `/status`, `/new` (forget chat for the current repo), `/compact [what to keep]` (shorten the chat, keep a summary), `/cancel`. Any other text goes to Claude in the current repo. Photos, files and albums are saved in `<repo>/telegram-resources/` (mode 600, ignored by git) and Claude gets their paths. Voice and audio are also transcribed (above). Follow-up messages keep the chat until `/new`. Messages sent while a task runs are queued and run in order; `/cancel` also clears the queue.

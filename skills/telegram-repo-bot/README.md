@@ -62,6 +62,16 @@ To add more repos later, run the skill in that repo or edit the config. The bot 
 | `/cancel` | Stop the running task and clear the queue |
 | any other text | Sent to Claude in the current repo |
 | a photo, file or album | Saved in `<repo>/telegram-resources/` and sent to Claude. The caption is the question |
+| a voice note or audio | Transcribed (the bot replies "Heard: ..."); the text goes to Claude |
+
+Voice needs faster-whisper in its own venv (the bot itself stays stdlib-only):
+
+```sh
+uv venv ~/.local/share/tg-claude-bot/venv
+uv pip install --python ~/.local/share/tg-claude-bot/venv/bin/python faster-whisper 'av<16'
+```
+
+The `small` model (about 500 MB) downloads on first use. Set `"whisper_model"` in the config to `base` (faster) or `medium` (more accurate). Silences show as `[pause 1.4s]`; `"pause_min"` (default 0.7 seconds) sets the shortest one shown.
 
 Logs: `journalctl --user -u tg-claude-bot -n 50`
 
