@@ -3,7 +3,7 @@ import sys
 from faster_whisper import WhisperModel
 
 model, path, pause_min = sys.argv[1], sys.argv[2], float(sys.argv[3])
-segments, _ = WhisperModel(model, compute_type="int8").transcribe(path, vad_filter=True, word_timestamps=True)
+segments, _ = WhisperModel(model, compute_type="int8").transcribe(path, word_timestamps=True)
 out, last = [], 0.0
 for w in (w for s in segments for w in s.words):
     if w.start - last >= pause_min:
