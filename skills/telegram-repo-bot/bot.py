@@ -68,13 +68,16 @@ def api(method, http_timeout=20, **data):
     data = {k: json.dumps(v) if isinstance(v, (dict, list)) else v for k, v in data.items()}
     req = urllib.request.Request(f"https://api.telegram.org/bot{conf()['token']}/{method}",
                                  urllib.parse.urlencode(data).encode())
-    try:
-        with urllib.request.urlopen(req, timeout=http_timeout) as r:
-            return json.load(r)["result"]
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"telegram {e.code}: {json.load(e).get('description')}") from None
-    except OSError as e:
-        raise RuntimeError(f"telegram request failed: {type(e).__name__}") from None  # hide token in URL
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=http_timeout) as r:
+                return json.load(r)["result"]
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"telegram {e.code}: {json.load(e).get('description')}") from None
+        except OSError as e:
+            if attempt == 2:  # hide token in URL
+                raise RuntimeError(f"telegram request failed: {type(e).__name__} {getattr(e, 'reason', '')}") from None
+            time.sleep(2 * (attempt + 1))
 
 
 def esc(s):
