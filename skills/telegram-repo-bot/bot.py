@@ -229,6 +229,19 @@ def current(chat, c):
     return name
 
 
+def context_used(path, session):
+    """Tokens the chat now takes, from the last model call in Claude Code's session file."""
+    f = Path("~/.claude/projects").expanduser() / re.sub(r"[^A-Za-z0-9]", "-", str(Path(path).expanduser().resolve())) / f"{session}.jsonl"
+    try:
+        for line in reversed(f.read_text().splitlines()):
+            u = (json.loads(line).get("message") or {}).get("usage")
+            if u:
+                return u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
+    except (OSError, ValueError, AttributeError):
+        pass
+    return 0
+
+
 def claude_cmd(repo, session):
     mode = "write" if repo.get("mode") == "write" else "read"
     cmd = ["claude", "-p", "--output-format", "json", "--append-system-prompt", PROMPTS[mode]]
@@ -279,8 +292,13 @@ def ask(chat, name, repo, text, files, reply_to):
             ans = "Stopped." if out is not None else "Timed out."
         else:
             try:
-                ans = json.loads(out).get("result") or ("Compacted." if text.startswith("/compact") else "(no answer)")
-                state["session"][key] = json.loads(out)["session_id"]
+                res = json.loads(out)
+                ans = res.get("result") or ("Compacted." if text.startswith("/compact") else "(no answer)")
+                state["session"][key] = res["session_id"]
+                window = max((m.get("contextWindow", 0) for m in res.get("modelUsage", {}).values()), default=0) or 200000
+                used = context_used(repo["path"], res["session_id"])
+                if used > conf().get("compact_warn", 150000) and not text.startswith("/compact"):
+                    ans += f"\n\nContext: {used // 1000}k of {window // 1000}k tokens. Send /compact to shorten the chat, or /new to start over."
             except (ValueError, KeyError):
                 state["session"].pop(key, None)  # e.g. the saved session is gone; next message starts fresh
                 ans = f"claude failed ({p.returncode}): {(err or out)[-300:]}"

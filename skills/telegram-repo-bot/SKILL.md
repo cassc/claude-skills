@@ -20,6 +20,7 @@ Config: `~/.config/tg-claude-bot/config.json` (chmod 600). The bot re-reads it o
 ```
 - `users`: numeric Telegram user ids (ints). Others are ignored.
 - `mode`: `read` = read tools + git log/show/diff/status only. `write` = full access (bypassPermissions: edit, any command, commit, push).
+- `compact_warn` (optional, default 150000): when a chat's context passes this many tokens, answers end with a hint to `/compact` or `/new`.
 - State (offset, current repo, Claude sessions): `~/.local/state/tg-claude-bot/state.json`.
 
 ## Add a repo (default action)
