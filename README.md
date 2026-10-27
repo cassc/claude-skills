@@ -46,7 +46,7 @@ ln -s "$PWD/claude-skills/skills/<skill>" ~/.claude/skills/<skill>
 
 ### `telegram-repo-bot`
 
-- **It must live at `~/.claude/skills/telegram-repo-bot`** (see its README). Other paths break it.
+- **It must live at `~/.claude/skills/telegram-repo-bot`** (see its README). The systemd service runs it from that path.
 - **`write` mode gives a shell to your users.** Anyone in its user list can run commands on your machine. Add only people you fully trust.
 
 ### `building-study-cards-from-repos`
