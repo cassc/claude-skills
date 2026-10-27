@@ -30,6 +30,7 @@ ln -s "$PWD/claude-skills/skills/<skill>" ~/.claude/skills/<skill>
 |---|---|
 | `adversarial-cv-review` | Builds the case against a CV, like a strict hiring manager |
 | `building-study-cards-from-repos` | Turns a repo into study cards, a quiz, and a Claude tutor chat |
+| `chatting-with-repos` | Web page to chat with Claude Code about a repo (read-only), with phone login |
 | `play-prod-access` | Drafts answers for the Google Play production access form |
 | `telegram-repo-bot` | Telegram bot that runs Claude Code in your local repos |
 
@@ -45,6 +46,16 @@ ln -s "$PWD/claude-skills/skills/<skill>" ~/.claude/skills/<skill>
 
 - `telegram-repo-bot` expects to live at `~/.claude/skills/telegram-repo-bot` (see its README). In `write` mode, anyone in its user list can run commands on your machine.
 - `building-study-cards-from-repos` runs a local server that calls `claude -p`. Use it only on repos you trust.
+
+### Warning: `chatting-with-repos` and `building-study-cards-from-repos`
+
+Both put Claude Code on a web page. Read this before you serve one beyond `127.0.0.1`.
+
+- **Secret files can leak.** Claude is blocked only from `.env` and `.env.*`. It can still read any other file in the repo, including git-ignored ones (`credentials.json`, `*.pem`, `id_rsa`, `secrets.yaml`, ...). Anyone who is signed in can ask for them. Remove secrets from the repo, or serve a clean copy.
+- **Every question uses your Claude account.** It runs `claude` as you and uses your quota. Giving other people access to your Claude subscription this way may break Anthropic's terms. Keep it for yourself.
+- **No login without `PUBLIC_URL`.** On `127.0.0.1` there is no login. Behind nginx, a tunnel or any proxy, you must set `PUBLIC_URL`, or anyone who reaches the proxy gets in.
+- **Prompt injection.** Text in the repo can steer Claude's answers. Claude has read-only tools, but do not trust replies about repos you did not write.
+- **Use at your own risk.** No security audit was done. Keep the pair link and phone safe: the phone is the key that signs in other browsers.
 
 ## License
 

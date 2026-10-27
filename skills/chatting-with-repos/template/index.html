@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>{{TITLE}}</h1>
+  <button id="files">Files</button>
+</header>
+<main>
+  <aside id="chat">
+    <div id="log" class="log"></div>
+    <div id="log-history" class="log" hidden></div>
+    <form id="chat-form">
+      <textarea id="msg" rows="3" placeholder="Ask about this repo"></textarea>
+      <div class="row">
+        <span>
+          <button type="button" id="chat-new">New chat</button>
+          <button type="button" id="chat-history">History</button>
+        </span>
+        <button type="submit">Send</button>
+      </div>
+    </form>
+  </aside>
+</main>
+<dialog id="src">
+  <form method="dialog" class="row">
+    <span id="src-title"></span>
+    <span><a id="src-tab" target="_blank">Open in new tab</a> <button>Close</button></span>
+  </form>
+  <div class="src-body">
+    <div class="src-side">
+      <input id="src-filter" placeholder="Filter files" aria-label="Filter files">
+      <div id="src-files"></div>
+    </div>
+    <pre id="src-code" tabindex="0"></pre>
+  </div>
+</dialog>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="chat.js"></script>
+<script src="source.js"></script>
+<script src="highlight.js"></script>
+<script src="markdown.js"></script>
+<script src="history.js"></script>
+<script>resume();</script>
+</body>
+</html>
