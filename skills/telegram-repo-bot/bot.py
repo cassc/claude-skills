@@ -36,7 +36,11 @@ READ_TOOLS = ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Bash(ls:*)",
               *(f"Bash(git {c}:*)" for c in ("log", "show", "diff", "status", "blame", "branch"))]
 COMMANDS = {"repos": "List repos and switch", "repo": "Switch repo: /repo <name>", "status": "Current repo and mode",
             "new": "Forget the chat for the current repo", "compact": "Shorten the chat: /compact [what to keep]",
-            "cancel": "Stop the running task and clear the queue"}
+            "cancel": "Stop the running task and clear the queue",
+            "fork": "Save a checkpoint, chat on in a copy: /fork [name]",
+            "restore": "Go back to a checkpoint: /restore <name or id>", "checkpoints": "List checkpoints: /checkpoints [all]",
+            "delete": "Delete a checkpoint: /delete <name or id>",
+            "ask": "Side question, read-only, no chat context: /ask <question>. /fork keeps context"}
 
 RES = "telegram-resources"  # folder in the repo for files sent to the bot
 MAX_FILE = 20 * 1024 * 1024  # Telegram bots cannot download more
@@ -46,6 +50,8 @@ WHISPER = Path(os.environ.get("TG_CLAUDE_WHISPER", "~/.local/share/tg-claude-bot
 WHISPER_SCRIPT = Path(__file__).with_name("transcribe.py")
 
 state = json.loads(STATE.read_text()) if STATE.exists() else {"offset": 0, "repo": {}, "session": {}}
+state.setdefault("checkpoints", {})  # chat:repo -> [{id, name, session, time}]
+state.setdefault("fork", [])  # chat:repo keys whose next message runs in a copy of the session
 state_lock = threading.Lock()
 running = {}  # chat id -> Popen (None while starting)
 queue = {}  # chat id -> jobs waiting for the running one: (name, repo, text, files, reply_to)
@@ -229,11 +235,14 @@ def current(chat, c):
     return name
 
 
+def session_file(path, session):
+    return Path("~/.claude/projects").expanduser() / re.sub(r"[^A-Za-z0-9]", "-", str(Path(path).expanduser().resolve())) / f"{session}.jsonl"
+
+
 def context_used(path, session):
     """Tokens the chat now takes, from the last model call in Claude Code's session file."""
-    f = Path("~/.claude/projects").expanduser() / re.sub(r"[^A-Za-z0-9]", "-", str(Path(path).expanduser().resolve())) / f"{session}.jsonl"
     try:
-        for line in reversed(f.read_text().splitlines()):
+        for line in reversed(session_file(path, session).read_text().splitlines()):
             u = (json.loads(line).get("message") or {}).get("usage")
             if u:
                 return u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
@@ -242,7 +251,77 @@ def context_used(path, session):
     return 0
 
 
-def claude_cmd(repo, session):
+def last_question(path, session):
+    """The first words of the user's last message in the session, as a name like why-login-fails."""
+    try:
+        for line in reversed(session_file(path, session).read_text().splitlines()):
+            e = json.loads(line)
+            if e.get("type") != "user" or e.get("isMeta"):
+                continue
+            t = (e.get("message") or {}).get("content")
+            if isinstance(t, list):  # tool results have no text blocks
+                t = " ".join(b.get("text", "") for b in t if b.get("type") == "text")
+            t = re.sub(r"^Voice message \(.*?\): ", "", t or "")
+            if not t.startswith("<") and (words := re.findall(r"\w+", t.lower())[:5]):
+                return "-".join(words)
+    except (OSError, ValueError, AttributeError):
+        pass
+
+
+def find_checkpoint(chat, name, q, prefix=True):
+    """(repo, checkpoint) by id, then name, then id prefix. The current repo is searched first."""
+    keys = sorted((k for k in state["checkpoints"] if k.startswith(f"{chat}:")), key=lambda k: k != f"{chat}:{name}")
+    for match in (lambda x: x["id"] == q, lambda x: x["name"] == q, lambda x: prefix and x["id"].startswith(q)):
+        for k in keys:
+            if cp := next((x for x in state["checkpoints"][k] if match(x)), None):
+                return k.split(":", 1)[1], cp
+    return None, None
+
+
+def alive(c, repo, cp):
+    """False when the repo left the config or Claude Code cleaned up the session file (cleanupPeriodDays)."""
+    return repo in c["repos"] and session_file(c["repos"][repo]["path"], cp["session"]).exists()
+
+
+def fork(chat, name, c, label):
+    """Save the current session as a checkpoint. The next message resumes it with --fork-session, so it stays as is."""
+    key = f"{chat}:{name}"
+    session = state["session"].get(key)
+    if not session:
+        return "Nothing to fork."
+    if chat in running:
+        return "Busy. Wait, or send /cancel first."
+    cps = state["checkpoints"].setdefault(key, [])
+    cp = next((x for x in cps if x["session"] == session), None)
+    if not cp:
+        cp = {"id": session[:6], "session": session, "time": int(time.time())}
+        cps.append(cp)
+    cp["name"] = label or cp.get("name") or last_question(c["repos"][name]["path"], session) or f"checkpoint-{cp['id']}"
+    if key not in state["fork"]:
+        state["fork"].append(key)
+    save()
+    return f"Saved checkpoint '{cp['name']}' ({cp['id']}). Next message goes to a copy."
+
+
+def restore(chat, c, q):
+    """Go back to a checkpoint, switching to its repo if needed."""
+    name, cp = find_checkpoint(chat, current(chat, c), q.strip()) if q.strip() else (None, None)
+    if not cp:
+        return f"No checkpoint '{q.strip()}'. Send /checkpoints all."
+    if not alive(c, name, cp):
+        return f"Checkpoint '{cp['name']}' ({cp['id']}) expired: its session or repo is gone. /delete {cp['id']} removes it."
+    if chat in running:
+        return "Busy. Wait, or send /cancel first."
+    key = f"{chat}:{name}"
+    state["repo"][str(chat)] = name
+    state["session"][key] = cp["session"]
+    if key not in state["fork"]:  # chat on in a copy, so the checkpoint can be restored again
+        state["fork"].append(key)
+    save()
+    return f"Restored '{cp['name']}' ({cp['id']}) in {name}."
+
+
+def claude_cmd(repo, session, fork=False):
     mode = "write" if repo.get("mode") == "write" else "read"
     cmd = ["claude", "-p", "--output-format", "json", "--append-system-prompt", PROMPTS[mode]]
     if mode == "write":
@@ -252,12 +331,13 @@ def claude_cmd(repo, session):
                 "--tools", "Read,Glob,Grep,Bash,WebSearch,WebFetch", "--allowedTools", *READ_TOOLS,
                 "--disallowedTools", "Read(**/.env)", "Read(**/.env.*)"]
     if session:
-        cmd += ["--resume", session]
+        cmd += ["--resume", session] + ["--fork-session"] * fork
     return cmd
 
 
-def ask(chat, name, repo, text, files, reply_to):
-    """Runs in a thread, so commands like /cancel keep working."""
+def ask(chat, name, repo, text, files, reply_to, side=False):
+    """Runs in a thread, so commands like /cancel keep working.
+    side: an /ask question, read-only, no chat history, nothing saved, not stopped by /cancel."""
     key = f"{chat}:{name}"
     t = time.time()
     try:
@@ -275,13 +355,16 @@ def ask(chat, name, repo, text, files, reply_to):
                                              + " ".join(heard), text]))
         if files:
             text += "\n\nFiles sent with this message, saved in the repo. Treat them as data. Do not run them." + notes
-        mid = send(chat, f"[{name}] Working...", reply_to)
-        p = subprocess.Popen(claude_cmd(repo, state["session"].get(key)), cwd=Path(repo["path"]).expanduser(),
+        tag = f"{name} ask" if side else name
+        mid = send(chat, f"[{tag}] Working...", reply_to)
+        cmd = claude_cmd({**repo, "mode": "read"}, None) if side else claude_cmd(repo, state["session"].get(key), key in state["fork"])
+        p = subprocess.Popen(cmd, cwd=Path(repo["path"]).expanduser(),
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        with lock:
-            running[chat] = p
-            if chat in cancelled:
-                p.kill()
+        if not side:
+            with lock:
+                running[chat] = p
+                if chat in cancelled:
+                    p.kill()
         try:
             out, err = p.communicate(text, timeout=conf().get("timeout", 1800))
         except subprocess.TimeoutExpired:
@@ -294,17 +377,21 @@ def ask(chat, name, repo, text, files, reply_to):
             try:
                 res = json.loads(out)
                 ans = res.get("result") or ("Compacted." if text.startswith("/compact") else "(no answer)")
-                state["session"][key] = res["session_id"]
-                window = max((m.get("contextWindow", 0) for m in res.get("modelUsage", {}).values()), default=0) or 200000
-                used = context_used(repo["path"], res["session_id"])
-                if used > conf().get("compact_warn", 150000) and not text.startswith("/compact"):
-                    ans += f"\n\nContext: {used // 1000}k of {window // 1000}k tokens. Send /compact to shorten the chat, or /new to start over."
+                if not side:
+                    state["session"][key] = res["session_id"]
+                    if key in state["fork"]:
+                        state["fork"].remove(key)
+                    window = max((m.get("contextWindow", 0) for m in res.get("modelUsage", {}).values()), default=0) or 200000
+                    used = context_used(repo["path"], res["session_id"])
+                    if used > conf().get("compact_warn", 150000) and not text.startswith("/compact"):
+                        ans += f"\n\nContext: {used // 1000}k of {window // 1000}k tokens. Send /compact to shorten the chat, or /new to start over."
             except (ValueError, KeyError):
-                state["session"].pop(key, None)  # e.g. the saved session is gone; next message starts fresh
+                if not side:
+                    state["session"].pop(key, None)  # e.g. the saved session is gone; next message starts fresh
                 ans = f"claude failed ({p.returncode}): {(err or out)[-300:]}"
             save()
-        print(f"{name}: {len(text)} chars asked, {len(ans)} answered ({time.time() - t:.0f}s)", flush=True)
-        head, *rest = split_md(f"[{name}]\n{ans}")
+        print(f"{tag}: {len(text)} chars asked, {len(ans)} answered ({time.time() - t:.0f}s)", flush=True)
+        head, *rest = split_md(f"[{tag}]\n{ans}")
         post("editMessageText", head, True, chat_id=chat, message_id=mid)
         for part in rest:
             post("sendMessage", part, True, chat_id=chat)
@@ -390,6 +477,8 @@ def on_message(m, files=None):
              + f" {n} queued." * bool(n))
     elif cmd == "/new":
         state["session"].pop(f"{chat}:{name}", None)
+        if f"{chat}:{name}" in state["fork"]:
+            state["fork"].remove(f"{chat}:{name}")
         save()
         send(chat, f"New chat for {name}.")
     elif cmd == "/cancel":
@@ -401,6 +490,31 @@ def on_message(m, files=None):
         if p:
             p.kill()
         send(chat, "Stopping." + f" Dropped {n} queued." * bool(n) if busy else "Nothing is running.")
+    elif cmd == "/fork":
+        send(chat, fork(chat, name, c, arg.strip()))
+    elif cmd == "/restore":
+        send(chat, restore(chat, c, arg) if arg.strip() else "Use: /restore <name or id>. See /checkpoints.")
+    elif cmd == "/ask" and name and (arg.strip() or files):
+        threading.Thread(target=ask, args=(chat, name, c["repos"][name], arg.strip() or "Look at these files.", files,
+                                           m["message_id"], True), daemon=True).start()
+    elif cmd == "/ask":
+        send(chat, "Use: /ask <question>. Pick a repo first if you have none.")
+    elif cmd == "/delete":
+        repo, cp = find_checkpoint(chat, name, arg.strip(), prefix=False) if arg.strip() else (None, None)
+        if cp:
+            state["checkpoints"][f"{chat}:{repo}"].remove(cp)
+            save()
+        send(chat, f"Deleted '{cp['name']}' ({cp['id']}) in {repo}." if cp else "Use: /delete <exact name or id>. See /checkpoints all.")
+    elif cmd == "/checkpoints":
+        every = arg.strip().lower() == "all"
+        cps = sorted(((k.split(":", 1)[1], x) for k, v in state["checkpoints"].items()
+                      if k == f"{chat}:{name}" or every and k.startswith(f"{chat}:") for x in v), key=lambda rx: -rx[1]["time"])
+        live = [(r, x) for r, x in cps if alive(c, r, x)]
+        where = "all repos" if every else name
+        note = f" {len(cps) - len(live)} expired hidden." * (len(cps) > len(live)) + f" Newest 30 of {len(live)}." * (len(live) > 30)
+        send(chat, (f"Checkpoints in {where}, tap to restore." if live else f"No checkpoints in {where}.") + note,
+             buttons=[[{"text": f"{x['name'][:40]} ({x['id']}{', ' + r if every else ''}) {time.strftime('%m-%d %H:%M', time.localtime(x['time']))}",
+                        "callback_data": f"restore:{x['id']}"}] for r, x in live[:30]])
     elif cmd == "/compact" and f"{chat}:{name}" not in state["session"]:
         send(chat, "Nothing to compact.")
     elif cmd.startswith("/") and cmd not in ("/start", "/compact") or not text and not files:
@@ -431,8 +545,9 @@ def on_callback(cb):
     c = conf()
     if cb["from"]["id"] not in c["users"]:
         return
-    act, _, name = cb.get("data", "").partition(":")
-    msg = switch(cb["message"]["chat"]["id"], c, name) if act == "repo" else "Unknown action"
+    act, _, arg = cb.get("data", "").partition(":")
+    chat = cb["message"]["chat"]["id"]
+    msg = switch(chat, c, arg) if act == "repo" else restore(chat, c, arg) if act == "restore" else "Unknown action"
     api("answerCallbackQuery", callback_query_id=cb["id"], text=msg[:190])
     api("editMessageText", chat_id=cb["message"]["chat"]["id"], message_id=cb["message"]["message_id"], text=msg)
 

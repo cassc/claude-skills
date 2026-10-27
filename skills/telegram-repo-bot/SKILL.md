@@ -21,7 +21,7 @@ Config: `~/.config/tg-claude-bot/config.json` (chmod 600). The bot re-reads it o
 - `users`: numeric Telegram user ids (ints). Others are ignored.
 - `mode`: `read` = read tools + git log/show/diff/status only. `write` = full access (bypassPermissions: edit, any command, commit, push).
 - `compact_warn` (optional, default 150000): when a chat's context passes this many tokens, answers end with a hint to `/compact` or `/new`.
-- State (offset, current repo, Claude sessions): `~/.local/state/tg-claude-bot/state.json`.
+- State (offset, current repo, Claude sessions, checkpoints): `~/.local/state/tg-claude-bot/state.json`.
 
 ## Add a repo (default action)
 1. If config exists, read it. Only ask for what is missing.
@@ -56,4 +56,6 @@ After editing `bot.py`: `systemctl --user restart tg-claude-bot`.
 - `claude failed`: check `claude` is on the unit's PATH and logged in.
 
 ## Bot commands
-`/repos` (buttons to switch), `/repo <name>`, `/status`, `/new` (forget chat for the current repo), `/compact [what to keep]` (shorten the chat, keep a summary), `/cancel`. Any other text goes to Claude in the current repo. Photos, files and albums are saved in `<repo>/telegram-resources/` (mode 600, ignored by git) and Claude gets their paths. Voice and audio are also transcribed (above). Follow-up messages keep the chat until `/new`. Messages sent while a task runs are queued and run in order; `/cancel` also clears the queue.
+`/repos` (buttons to switch), `/repo <name>`, `/status`, `/new` (forget chat for the current repo), `/compact [what to keep]` (shorten the chat, keep a summary), `/cancel`, `/fork [name]`, `/restore <name or id>`, `/checkpoints [all]`, `/delete <name or id>`, `/ask <question>`. Any other text goes to Claude in the current repo. Photos, files and albums are saved in `<repo>/telegram-resources/` (mode 600, ignored by git) and Claude gets their paths. Voice and audio are also transcribed (above). Follow-up messages keep the chat until `/new`. Messages sent while a task runs are queued and run in order; `/cancel` also clears the queue.
+`/fork [name]` saves the current chat as a checkpoint (id = first 6 chars of the session id; no name = first words of the last question) and the next message runs in a copy (`--fork-session`). `/restore` goes back to a checkpoint; chatting after it also runs in a copy, so a checkpoint never changes and can be restored again. `/checkpoints` lists the current repo's (`all`: every repo; newest 30) with restore buttons; restoring one from another repo switches to it. Claude Code deletes session files after `cleanupPeriodDays` (default 30) in `~/.claude/settings.json`; those checkpoints are hidden and `/restore` says expired. Raise it to keep checkpoints longer.
+`/ask` is a side question: a fresh Claude run in the current repo, always read-only (even in a `write` repo), with no chat history, and the answer is not kept in the chat. It runs at once, even while a task runs, and replies to the `/ask` message; `/cancel` does not stop it. Unlike Claude Code's `/btw`, it does not see the chat; to ask with the chat as context, use `/fork`.
