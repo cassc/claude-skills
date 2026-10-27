@@ -47,7 +47,17 @@ ln -s "$PWD/claude-skills/skills/<skill>" ~/.claude/skills/<skill>
 ### `telegram-repo-bot`
 
 - **It must live at `~/.claude/skills/telegram-repo-bot`** (see its README). The systemd service runs it from that path.
-- **`write` mode gives a shell to your users.** Anyone in its user list can run commands on your machine. Add only people you fully trust.
+- **`write` mode gives a shell to your users.** Anyone in its user list can run any command on your machine as you.
+- **Allow only one user id: your own.** Set `"users": [<your id>]`. Every extra id gets the same full access.
+- **Anyone who takes over your Telegram account owns your machine.** Turn on Telegram's two-step password (Settings > Privacy and Security).
+
+Suggested setup for the most security:
+
+- In @BotFather, run `/setjoingroups` and choose **Disable**. Then nobody can add the bot to a group. The bot does not check the chat type: in a group, everyone sees its replies, including code and file contents.
+- Never add the bot to a channel or make it a channel admin.
+- Use `read` mode by default. Use `write` only for the repos where you need it.
+- Don't use `write` mode on repos that hold untrusted text, like web pages or data you crawled. That text can tell Claude to run commands (prompt injection).
+- Keep `~/.config/tg-claude-bot/config.json` at mode `600`. The token lets anyone read what you send the bot. If it leaks, run `/revoke` in @BotFather.
 
 ### `building-study-cards-from-repos`
 
