@@ -42,12 +42,18 @@ ln -s "$PWD/claude-skills/skills/<skill>" ~/.claude/skills/<skill>
 | `commit-all` | Stages all changes, writes one commit from the diff, pushes |
 | `play-release-notes` | Writes Google Play "What's new" text from git history |
 
-## Notes
+## Warnings
 
-- `telegram-repo-bot` expects to live at `~/.claude/skills/telegram-repo-bot` (see its README). In `write` mode, anyone in its user list can run commands on your machine.
-- `building-study-cards-from-repos` runs a local server that calls `claude -p`. Use it only on repos you trust.
+### `telegram-repo-bot`
 
-### Warning: `chatting-with-repos` and `building-study-cards-from-repos`
+- **It must live at `~/.claude/skills/telegram-repo-bot`** (see its README). Other paths break it.
+- **`write` mode gives a shell to your users.** Anyone in its user list can run commands on your machine. Add only people you fully trust.
+
+### `building-study-cards-from-repos`
+
+- **It runs a local server that calls `claude -p`.** Use it only on repos you trust.
+
+### `chatting-with-repos` and `building-study-cards-from-repos`
 
 Both put Claude Code on a web page. Read this before you serve one beyond `127.0.0.1`.
 
