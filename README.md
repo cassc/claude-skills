@@ -32,7 +32,7 @@ ln -s "$PWD/claude-skills/skills/<skill>" ~/.claude/skills/<skill>
 | `building-study-cards-from-repos` | Turns a repo into study cards, a quiz, and a Claude tutor chat |
 | `chatting-with-repos` | Web page to chat with Claude Code about a repo (read-only), with phone login |
 | `play-prod-access` | Drafts answers for the Google Play production access form |
-| `telegram-repo-bot` | Telegram bot that runs Claude Code in your local repos |
+| `telegram-repo-bot` | Telegram bot that runs Claude Code in your local repos. One bot serves many repos, and each repo has its own read or write mode |
 
 ## Agents
 
