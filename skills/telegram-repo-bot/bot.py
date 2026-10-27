@@ -155,7 +155,7 @@ def send(chat, text, reply_to=None, buttons=None):
     for i, part in enumerate(parts):
         extra = {"reply_markup": {"inline_keyboard": buttons}} if buttons and i == len(parts) - 1 else {}
         if reply_to:
-            extra["reply_to_message_id"] = reply_to
+            extra.update(reply_to_message_id=reply_to, allow_sending_without_reply=True)
         mid = api("sendMessage", chat_id=chat, text=part, **extra)["message_id"]
     return mid
 
@@ -283,7 +283,7 @@ def alive(c, repo, cp):
     return repo in c["repos"] and session_file(c["repos"][repo]["path"], cp["session"]).exists()
 
 
-def fork(chat, name, c, label):
+def fork(chat, name, c, label, msg):
     """Save the current session as a checkpoint. The next message resumes it with --fork-session, so it stays as is."""
     key = f"{chat}:{name}"
     session = state["session"].get(key)
@@ -294,7 +294,7 @@ def fork(chat, name, c, label):
     cps = state["checkpoints"].setdefault(key, [])
     cp = next((x for x in cps if x["session"] == session), None)
     if not cp:
-        cp = {"id": session[:6], "session": session, "time": int(time.time())}
+        cp = {"id": session[:6], "session": session, "time": int(time.time()), "msg": msg}  # msg: the /fork message
         cps.append(cp)
     cp["name"] = label or cp.get("name") or last_question(c["repos"][name]["path"], session) or f"checkpoint-{cp['id']}"
     if key not in state["fork"]:
@@ -491,7 +491,7 @@ def on_message(m, files=None):
             p.kill()
         send(chat, "Stopping." + f" Dropped {n} queued." * bool(n) if busy else "Nothing is running.")
     elif cmd == "/fork":
-        send(chat, fork(chat, name, c, arg.strip()))
+        send(chat, fork(chat, name, c, arg.strip(), m["message_id"]))
     elif cmd == "/restore":
         send(chat, restore(chat, c, arg) if arg.strip() else "Use: /restore <name or id>. See /checkpoints.")
     elif cmd == "/ask" and name and (arg.strip() or files):
@@ -512,9 +512,9 @@ def on_message(m, files=None):
         live = [(r, x) for r, x in cps if alive(c, r, x)]
         where = "all repos" if every else name
         note = f" {len(cps) - len(live)} expired hidden." * (len(cps) > len(live)) + f" Newest 30 of {len(live)}." * (len(live) > 30)
-        send(chat, (f"Checkpoints in {where}, tap to restore." if live else f"No checkpoints in {where}.") + note,
+        send(chat, (f"Checkpoints in {where}. Tap one to jump back to it." if live else f"No checkpoints in {where}.") + note,
              buttons=[[{"text": f"{x['name'][:40]} ({x['id']}{', ' + r if every else ''}) {time.strftime('%m-%d %H:%M', time.localtime(x['time']))}",
-                        "callback_data": f"restore:{x['id']}"}] for r, x in live[:30]])
+                        "callback_data": f"show:{x['id']}"}] for r, x in live[:30]])
     elif cmd == "/compact" and f"{chat}:{name}" not in state["session"]:
         send(chat, "Nothing to compact.")
     elif cmd.startswith("/") and cmd not in ("/start", "/compact") or not text and not files:
@@ -547,6 +547,13 @@ def on_callback(cb):
         return
     act, _, arg = cb.get("data", "").partition(":")
     chat = cb["message"]["chat"]["id"]
+    if act == "show":  # a bot cannot scroll the chat; a reply to the message before the /fork lets the user jump there
+        _, cp = find_checkpoint(chat, current(chat, c), arg)
+        api("answerCallbackQuery", callback_query_id=cb["id"])
+        if cp:
+            send(chat, f"Checkpoint '{cp['name']}' ({cp['id']})." + " Tap the quote to jump there." * ("msg" in cp),
+                 cp["msg"] - 1 if "msg" in cp else None, [[{"text": "Restore", "callback_data": f"restore:{cp['id']}"}]])
+        return
     msg = switch(chat, c, arg) if act == "repo" else restore(chat, c, arg) if act == "restore" else "Unknown action"
     api("answerCallbackQuery", callback_query_id=cb["id"], text=msg[:190])
     api("editMessageText", chat_id=cb["message"]["chat"]["id"], message_id=cb["message"]["message_id"], text=msg)
