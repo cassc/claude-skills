@@ -28,7 +28,6 @@ ln -s "$PWD/claude-skills/skills/<skill>" ~/.claude/skills/<skill>
 
 | Skill | What it does |
 |---|---|
-| `adversarial-cv-review` | Builds the case against a CV, like a strict hiring manager |
 | `building-study-cards-from-repos` | Turns a repo into study cards, a quiz, and a Claude tutor chat |
 | `chatting-with-repos` | Web page to chat with Claude Code about a repo (read-only), with phone login |
 | `play-prod-access` | Drafts answers for the Google Play production access form |
