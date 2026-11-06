@@ -41,17 +41,18 @@ COMMANDS = {"repos": "List repos and switch", "repo": "Switch repo: /repo <name>
             "restore": "Go back to a checkpoint: /restore <name or id>", "checkpoints": "List checkpoints: /checkpoints [all]",
             "delete": "Delete a checkpoint: /delete <name or id>",
             "ask": "Side question, read-only, no chat context: /ask <question>. /fork keeps context",
-            "bg": "Run a task in parallel, in a copy of the chat: /bg <task>"}
+            "bg": "Run a task in parallel, in a copy of the chat: /bg <task>",
+            "voice": "Voice replies to voice messages: /voice on|off"}
 
 RES = "telegram-resources"  # folder in the repo for files sent to the bot
 MAX_FILE = 20 * 1024 * 1024  # Telegram bots cannot download more
 FILE_KINDS = ("photo", "document", "video", "audio", "voice", "animation", "video_note", "sticker")
 SPEECH = ("voice", "audio", "video_note")  # transcribed, the text goes to Claude
-WHISPER = Path(os.environ.get("TG_CLAUDE_WHISPER", "~/.local/share/tg-claude-bot/venv/bin/python")).expanduser()
-WHISPER_SCRIPT = Path(__file__).with_name("transcribe.py")
+VOICE = Path(__file__).with_name("voice.py")  # local speech to text and text to audio
 
 state = json.loads(STATE.read_text()) if STATE.exists() else {"offset": 0, "repo": {}, "session": {}}
 state.setdefault("checkpoints", {})  # chat:repo -> [{id, name, session, time}]
+state.setdefault("voice_off", [])  # chats that want no voice replies
 state.setdefault("fork", [])  # chat:repo keys whose next message runs in a copy of the session
 state_lock = threading.Lock()
 running = {}  # chat id -> Popen (None while starting)
@@ -218,15 +219,37 @@ def download(repo, f):
     return path
 
 
-def transcribe(path, model, pause_min):
-    """Speech to text with faster-whisper, run from its own venv so the bot stays stdlib-only."""
-    if not WHISPER.exists():
-        raise RuntimeError(f"voice is not set up: no {WHISPER} (see the bot's SKILL.md)")
-    r = subprocess.run([str(WHISPER), "-I", str(WHISPER_SCRIPT), model, str(path), str(pause_min)],
-                       capture_output=True, text=True, timeout=900)
+def transcribe(path, c):
+    """Speech to text with voice.py: local GPU models, CPU whisper as fallback. The bot stays stdlib-only."""
+    r = subprocess.run([sys.executable, str(VOICE), "asr", str(path), "--pause", str(c.get("pause_min", 0.7)),
+                        "--context", c.get("asr_prompt", ""), "--whisper", c.get("whisper_model", "small")],
+                       capture_output=True, text=True, timeout=1000)
     if r.returncode:
         raise RuntimeError(f"transcribe failed: {r.stderr.strip()[-300:]}")
     return r.stdout.strip() or "(no speech heard)"
+
+
+def send_voice(chat, text, reply_to):
+    """In a thread: speak a reply with voice.py (local GPU, can take a minute) and send it as a voice note."""
+    try:
+        r = subprocess.run([sys.executable, str(VOICE), "tts", "-", "--limit", str(conf().get("voice_limit", 600))],
+                           input=text.encode(), capture_output=True, timeout=1000)
+        if r.returncode or not r.stdout:
+            raise RuntimeError(r.stderr.decode().strip()[-300:] or "no audio")
+        b = secrets.token_hex(16)
+        fields = {"chat_id": chat, **({"reply_to_message_id": reply_to, "allow_sending_without_reply": "true"} if reply_to else {})}
+        body = b"".join(f'--{b}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode() for k, v in fields.items())
+        body += (f'--{b}\r\nContent-Disposition: form-data; name="voice"; filename="reply.ogg"\r\n'
+                 f"Content-Type: audio/ogg\r\n\r\n").encode() + r.stdout + f"\r\n--{b}--\r\n".encode()
+        req = urllib.request.Request(f"https://api.telegram.org/bot{conf()['token']}/sendVoice", body,
+                                     {"Content-Type": f"multipart/form-data; boundary={b}"})
+        try:
+            urllib.request.urlopen(req, timeout=60).close()
+        except OSError as e:
+            raise RuntimeError(f"sendVoice failed: {type(e).__name__} {getattr(e, 'code', '')}") from None  # hide token
+    except Exception as e:
+        print(f"voice reply failed: {e}", flush=True)
+        send(chat, f"Voice reply failed: {e}"[:500], reply_to)
 
 
 def current(chat, c):
@@ -357,8 +380,7 @@ def ask(chat, name, repo, text, files, reply_to, side=None):
             clean = {k: "".join(ch for ch in f.get(k) or "-" if ch.isprintable())[:100] for k in ("file_name", "mime_type")}
             notes += f"\n{RES}/{path.name} (name: {clean['file_name']}, type: {clean['mime_type']})"
             if f["kind"] in SPEECH:
-                c = conf()
-                heard.append(transcribe(path, c.get("whisper_model", "small"), c.get("pause_min", 0.7)))
+                heard.append(transcribe(path, conf()))
                 send(chat, f"Heard: {heard[-1]}", reply_to)
         if heard:
             text = "\n\n".join(filter(None, ["Voice message (transcribed, [pause Ns] = N seconds of silence): "
@@ -413,6 +435,8 @@ def ask(chat, name, repo, text, files, reply_to, side=None):
         post("editMessageText", head, True, chat_id=chat, message_id=mid)
         for part in rest:
             post("sendMessage", part, True, chat_id=chat)
+        if heard and p.returncode == 0 and chat not in state["voice_off"]:
+            threading.Thread(target=send_voice, args=(chat, ans, reply_to), daemon=True).start()
     except Exception as e:
         traceback.print_exc()
         try:
@@ -536,6 +560,11 @@ def on_message(m, files=None):
         send(chat, (f"Checkpoints in {where}. Tap one to jump back to it." if live else f"No checkpoints in {where}.") + note,
              buttons=[[{"text": f"{x['name'][:40]} ({x['id']}{', ' + r if every else ''}) {time.strftime('%m-%d %H:%M', time.localtime(x['time']))}",
                         "callback_data": f"show:{x['id']}"}] for r, x in live[:30]])
+    elif cmd == "/voice":
+        if arg.strip().lower() in ("on", "off"):
+            state["voice_off"] = [x for x in state["voice_off"] if x != chat] + [chat] * (arg.strip().lower() == "off")
+            save()
+        send(chat, f"Voice replies to voice messages: {'off' if chat in state['voice_off'] else 'on'}. Use /voice on|off.")
     elif cmd == "/compact" and f"{chat}:{name}" not in state["session"]:
         send(chat, "Nothing to compact.")
     elif cmd.startswith("/") and cmd not in ("/start", "/compact") or not text and not files:

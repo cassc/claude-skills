@@ -40,12 +40,14 @@ Config: `~/.config/tg-claude-bot/config.json` (chmod 600). The bot re-reads it o
 7. Run `python3 <skill dir>/bot.py --check`. Tell the user to send `/repos` to the bot.
 
 ## Voice messages (optional)
-Voice notes, audio files and round videos are transcribed with faster-whisper; the bot replies "Heard: ..." and sends the text (plus any caption) to Claude. Whisper lives in its own venv so `bot.py` stays stdlib-only (confirm the install with the user first):
+
+Voice notes, audio files and round videos are transcribed; the bot replies "Heard: ..." and sends the text (plus any caption) to Claude. Claude's answer comes back as text and also as a voice note (`/voice off` to stop that per chat). Voice runs on local models in its own venv (the bot itself stays stdlib-only). `voice.py` is the client; it starts `voice_server.py` on demand, which keeps Qwen3-ASR-0.6B (speech to text) and VoxCPM2 (text to audio) on the GPU and exits after 10 idle minutes so the GPU can sleep. Both fit in 8 GB VRAM only just; the timing aligner runs on the CPU. Install (several GB, confirm with the user first):
 ```
-uv venv ~/.local/share/tg-claude-bot/venv
-uv pip install --python ~/.local/share/tg-claude-bot/venv/bin/python faster-whisper 'av<16'
+uv venv --python 3.12 ~/.local/share/tg-voice/venv
+uv pip install --python ~/.local/share/tg-voice/venv/bin/python qwen-asr voxcpm
 ```
-`av<16`: newer PyAV breaks faster-whisper 1.2.1. The model downloads on first use (`small` is about 500 MB). Config `"whisper_model"`: `small` (default), `base` (faster), `medium` (more accurate). `TG_CLAUDE_WHISPER` env sets another Python path. `transcribe.py` runs in that venv and marks silences as `[pause 1.4s]`; config `"pause_min"` (seconds, default 0.7) sets the shortest pause shown.
+Models (about 6 GB) download on first use. If the GPU server fails, speech to text falls back to faster-whisper on the CPU (`transcribe.py`, venv `~/.local/share/tg-claude-bot/venv`: `faster-whisper 'av<16'`) and the text starts with "(CPU whisper)". Env: `TG_VOICE_ASR`, `TG_VOICE_TTS`, `TG_VOICE_STEPS` (default 10; 5 is faster), `TG_VOICE_IDLE` (seconds), `TG_VOICE_PORT` (8771). Log: `~/.local/state/tg-voice.log`.
+Config: `"pause_min"` (seconds, default 0.7) marks silences as `[pause 1.4s]`; `"asr_prompt"` lists words to expect (names, tickers); `"voice_limit"` (default 600) is the most characters spoken, the rest stays text only; `"whisper_model"` is for the CPU fallback (default `small`). The ai-quant bot uses the same `voice.py`.
 
 ## Other changes
 Edit the config: remove a repo, change `mode`, add or remove a user id. No restart needed.
@@ -57,7 +59,7 @@ After editing `bot.py`: `systemctl --user restart tg-claude-bot`.
 - `claude failed`: check `claude` is on the unit's PATH and logged in.
 
 ## Bot commands
-`/repos` (buttons to switch), `/repo <name>`, `/status`, `/new` (forget chat for the current repo), `/compact [what to keep]` (shorten the chat, keep a summary), `/cancel`, `/fork [name]`, `/restore <name or id>`, `/checkpoints [all]`, `/delete <name or id>`, `/ask <question>`, `/bg <task>`. Any other text goes to Claude in the current repo. Photos, files and albums are saved in `<repo>/telegram-resources/` (mode 600, ignored by git) and Claude gets their paths. Voice and audio are also transcribed (above). Follow-up messages keep the chat until `/new`. Messages sent while a task runs are queued and run in order; `/cancel` also clears the queue.
+`/repos` (buttons to switch), `/repo <name>`, `/status`, `/new` (forget chat for the current repo), `/compact [what to keep]` (shorten the chat, keep a summary), `/cancel`, `/fork [name]`, `/restore <name or id>`, `/checkpoints [all]`, `/delete <name or id>`, `/ask <question>`, `/bg <task>`, `/voice on|off`. Any other text goes to Claude in the current repo. Photos, files and albums are saved in `<repo>/telegram-resources/` (mode 600, ignored by git) and Claude gets their paths. Voice and audio are also transcribed (above). Follow-up messages keep the chat until `/new`. Messages sent while a task runs are queued and run in order; `/cancel` also clears the queue.
 `/fork [name]` saves the current chat as a checkpoint (id = first 6 chars of the session id; no name = first words of the last question) and the next message runs in a copy (`--fork-session`). `/restore` goes back to a checkpoint; chatting after it also runs in a copy, so a checkpoint never changes and can be restored again. `/checkpoints` lists the current repo's (`all`: every repo; newest 30); tapping one sends a reply quoting the message just before the `/fork` (tap the quote to jump there) with a Restore button; restoring one from another repo switches to it. Claude Code deletes session files after `cleanupPeriodDays` (default 30) in `~/.claude/settings.json`; those checkpoints are hidden and `/restore` says expired. Raise it to keep checkpoints longer.
 `/ask` is a side question: a fresh Claude run in the current repo, always read-only (even in a `write` repo), with no chat history, and the answer is not kept in the chat. It runs at once, even while a task runs, and replies to the `/ask` message; `/cancel` does not stop it. Unlike Claude Code's `/btw`, it does not see the chat; to ask with the chat as context, use `/fork`.
 

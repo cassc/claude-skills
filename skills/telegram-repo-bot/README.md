@@ -63,16 +63,17 @@ To add more repos later, run the skill in that repo or edit the config. The bot 
 | `/bg <task>` | Run a task in parallel, in a copy of the chat. Other messages are not blocked |
 | any other text | Sent to Claude in the current repo |
 | a photo, file or album | Saved in `<repo>/telegram-resources/` and sent to Claude. The caption is the question |
-| a voice note or audio | Transcribed (the bot replies "Heard: ..."); the text goes to Claude |
+| a voice note or audio | Transcribed (the bot replies "Heard: ..."); the text goes to Claude, and the answer also comes back as a voice note |
+| `/voice on\|off` | Voice replies to voice messages (default on) |
 
-Voice needs faster-whisper in its own venv (the bot itself stays stdlib-only):
-
-```sh
-uv venv ~/.local/share/tg-claude-bot/venv
-uv pip install --python ~/.local/share/tg-claude-bot/venv/bin/python faster-whisper 'av<16'
+Voice runs on local models in its own venv (the bot itself stays stdlib-only). `voice.py` is the client; it starts `voice_server.py` on demand, which keeps Qwen3-ASR-0.6B (speech to text) and VoxCPM2 (text to audio) on the GPU and exits after 10 idle minutes so the GPU can sleep. Both fit in 8 GB VRAM only just; the timing aligner runs on the CPU. Install (several GB):
 ```
+uv venv --python 3.12 ~/.local/share/tg-voice/venv
+uv pip install --python ~/.local/share/tg-voice/venv/bin/python qwen-asr voxcpm
+```
+Models (about 6 GB) download on first use. If the GPU server fails, speech to text falls back to faster-whisper on the CPU (`transcribe.py`, venv `~/.local/share/tg-claude-bot/venv`: `faster-whisper 'av<16'`) and the text starts with "(CPU whisper)".
 
-The `small` model (about 500 MB) downloads on first use. Set `"whisper_model"` in the config to `base` (faster) or `medium` (more accurate). Silences show as `[pause 1.4s]`; `"pause_min"` (default 0.7 seconds) sets the shortest one shown.
+Config: `"pause_min"` (default 0.7 seconds) sets the shortest silence shown as `[pause 1.4s]`. `"asr_prompt"` lists words to expect. `"voice_limit"` (default 600) is the most characters spoken. `"whisper_model"` is for the CPU fallback (default `small`). Voice log: `~/.local/state/tg-voice.log`.
 
 Logs: `journalctl --user -u tg-claude-bot -n 50`
 
