@@ -73,18 +73,18 @@ def save():
         STATE.write_text(json.dumps(state))
 
 
-def api(method, http_timeout=20, **data):
+def api(method, http_timeout=20, tries=3, **data):
     data = {k: json.dumps(v) if isinstance(v, (dict, list)) else v for k, v in data.items()}
     req = urllib.request.Request(f"https://api.telegram.org/bot{conf()['token']}/{method}",
                                  urllib.parse.urlencode(data).encode())
-    for attempt in range(3):
+    for attempt in range(tries):
         try:
             with urllib.request.urlopen(req, timeout=http_timeout) as r:
                 return json.load(r)["result"]
         except urllib.error.HTTPError as e:
             raise RuntimeError(f"telegram {e.code}: {json.load(e).get('description')}") from None
         except OSError as e:
-            if attempt == 2:  # hide token in URL
+            if attempt == tries - 1:  # hide token in URL
                 raise RuntimeError(f"telegram request failed: {type(e).__name__} {getattr(e, 'reason', '')}") from None
             time.sleep(2 * (attempt + 1))
 
@@ -196,7 +196,7 @@ def download(repo, f):
     if f.get("file_size", 0) > MAX_FILE:
         raise RuntimeError("file is over 20 MB, a bot cannot download it")
     d = resources_dir(repo)
-    src = api("getFile", file_id=f["file_id"])["file_path"]
+    src = api("getFile", http_timeout=30, tries=5, file_id=f["file_id"])["file_path"]
     ext = re.fullmatch(r".*\.([A-Za-z0-9]{1,10})", f.get("file_name") or src)  # the name from Telegram is not trusted
     path = d / (secrets.token_hex(8) + (f".{ext[1].lower()}" if ext else ""))
     if path.resolve().parent != d:
