@@ -3,6 +3,7 @@
 Config (~/.config/tg-claude-bot/config.json) is re-read on every update, so edits need no restart.
 Only users listed in config "users" are served. `bot.py --check` tests the config and token."""
 import json
+import mimetypes
 import os
 import re
 import secrets
@@ -25,12 +26,18 @@ STATE = Path(os.environ.get("TG_CLAUDE_STATE", "~/.local/state/tg-claude-bot/sta
 _gai = socket.getaddrinfo
 socket.getaddrinfo = lambda *a, **k: [r for r in _gai(*a, **k) if r[0] == socket.AF_INET] or _gai(*a, **k)
 
+RES = "telegram-resources"  # folder in the repo for files sent to the bot
+OUT = f"{RES}/out"  # files Claude saves here in write mode are sent to the chat, then deleted
+CHAT = ("You are already in the owner's Telegram chat: your reply is the message. "
+        "Never run `notify` and never call the Telegram API yourself. ")
 FORMAT = "Reply short. Simple Markdown is fine: bold, lists, inline code, code blocks. No tables, no nested lists, no images."
 PROMPTS = {
     "read": "You answer the repo owner through Telegram. This is read-only: do not try to change files. "
-            + FORMAT,
+            + CHAT + FORMAT,
     "write": "You work for the repo owner through Telegram. You may edit files, run commands and commit. "
-             "Say briefly what you changed. " + FORMAT,
+             "Say briefly what you changed. " + CHAT
+             + f"To send files (audio, video, images, documents), save them in `{OUT}/` in this repo; "
+               "the bot sends them after your reply and then deletes them. " + FORMAT,
 }
 READ_TOOLS = ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Bash(ls:*)",
               *(f"Bash(git {c}:*)" for c in ("log", "show", "diff", "status", "blame", "branch"))]
@@ -44,10 +51,12 @@ COMMANDS = {"repos": "List repos and switch", "repo": "Switch repo: /repo <name>
             "bg": "Run a task in parallel, in a copy of the chat: /bg <task>",
             "voice": "Voice replies to voice messages: /voice on|off"}
 
-RES = "telegram-resources"  # folder in the repo for files sent to the bot
 MAX_FILE = 20 * 1024 * 1024  # Telegram bots cannot download more
 FILE_KINDS = ("photo", "document", "video", "audio", "voice", "animation", "video_note", "sticker")
 SPEECH = ("voice", "audio", "video_note")  # transcribed, the text goes to Claude
+MAX_UPLOAD = 50 * 1024 * 1024  # Telegram bots cannot upload more
+SEND_KINDS = ((".mp3", ".m4a", ".wav", ".flac"), "sendAudio", "audio"), ((".ogg", ".opus"), "sendVoice", "voice"), \
+    ((".mp4", ".mov"), "sendVideo", "video"), ((".jpg", ".jpeg", ".png", ".webp"), "sendPhoto", "photo")
 VOICE = Path(__file__).with_name("voice.py")  # local speech to text and text to audio
 
 state = json.loads(STATE.read_text()) if STATE.exists() else {"offset": 0, "repo": {}, "session": {}}
@@ -231,6 +240,48 @@ def transcribe(path, c, repo):
     return r.stdout.strip() or "(no speech heard)"
 
 
+def upload(chat, reply_to, method, field, name, data, ctype):
+    b = secrets.token_hex(16)
+    fields = {"chat_id": chat, **({"reply_to_message_id": reply_to, "allow_sending_without_reply": "true"} if reply_to else {})}
+    body = b"".join(f'--{b}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode() for k, v in fields.items())
+    body += (f'--{b}\r\nContent-Disposition: form-data; name="{field}"; filename="{urllib.parse.quote(name)}"\r\n'
+             f"Content-Type: {ctype}\r\n\r\n").encode() + data + f"\r\n--{b}--\r\n".encode()
+    req = urllib.request.Request(f"https://api.telegram.org/bot{conf()['token']}/{method}", body,
+                                 {"Content-Type": f"multipart/form-data; boundary={b}"})
+    try:
+        urllib.request.urlopen(req, timeout=120).close()
+    except OSError as e:
+        raise RuntimeError(f"{method} failed: {type(e).__name__} {getattr(e, 'code', '')}") from None  # hide token
+
+
+def outbox(repo):
+    """The out folder, made before a write run so it is git-excluded and not a link."""
+    d = resources_dir(repo) / "out"
+    d.mkdir(mode=0o700, exist_ok=True)
+    if d.is_symlink() or not d.is_dir():
+        raise RuntimeError(f"{OUT} is a link or not a folder")
+    return d
+
+
+def send_outbox(chat, repo, reply_to):
+    """Send each file Claude left in the out folder with the fitting method, then delete it."""
+    for f in sorted(outbox(repo).iterdir()):
+        try:
+            if f.is_symlink() or not f.is_file():
+                raise RuntimeError("not a plain file")
+            if f.stat().st_size > MAX_UPLOAD:
+                raise RuntimeError("over 50 MB")
+            ext = f.suffix.lower()
+            method, field = next(((m, fl) for exts, m, fl in SEND_KINDS if ext in exts), ("sendDocument", "document"))
+            upload(chat, reply_to, method, field, f.name, f.read_bytes(),
+                   mimetypes.guess_type(f.name)[0] or "application/octet-stream")
+        except Exception as e:
+            send(chat, f"Could not send {f.name}: {e}"[:500], reply_to)
+        finally:
+            if f.is_file() or f.is_symlink():
+                f.unlink()
+
+
 def send_voice(chat, text, reply_to):
     """In a thread: speak a reply with voice.py (local GPU, can take a minute) and send it as a voice note."""
     try:
@@ -238,17 +289,7 @@ def send_voice(chat, text, reply_to):
                            input=text.encode(), capture_output=True, timeout=1000)
         if r.returncode or not r.stdout:
             raise RuntimeError(r.stderr.decode().strip()[-300:] or "no audio")
-        b = secrets.token_hex(16)
-        fields = {"chat_id": chat, **({"reply_to_message_id": reply_to, "allow_sending_without_reply": "true"} if reply_to else {})}
-        body = b"".join(f'--{b}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode() for k, v in fields.items())
-        body += (f'--{b}\r\nContent-Disposition: form-data; name="voice"; filename="reply.ogg"\r\n'
-                 f"Content-Type: audio/ogg\r\n\r\n").encode() + r.stdout + f"\r\n--{b}--\r\n".encode()
-        req = urllib.request.Request(f"https://api.telegram.org/bot{conf()['token']}/sendVoice", body,
-                                     {"Content-Type": f"multipart/form-data; boundary={b}"})
-        try:
-            urllib.request.urlopen(req, timeout=60).close()
-        except OSError as e:
-            raise RuntimeError(f"sendVoice failed: {type(e).__name__} {getattr(e, 'code', '')}") from None  # hide token
+        upload(chat, reply_to, "sendVoice", "voice", "reply.ogg", r.stdout, "audio/ogg")
     except Exception as e:
         print(f"voice reply failed: {e}", flush=True)
         send(chat, f"Voice reply failed: {e}"[:500], reply_to)
@@ -412,6 +453,9 @@ def ask(chat, name, repo, jobs, side=None):
         mid = send(chat, f"[{tag}] Working...", reply_to)
         cmd = (claude_cmd({**repo, "mode": "read"}, None) if side == "ask"
                else claude_cmd(repo, state["session"].get(key), side == "bg" or key in state["fork"]))
+        sends = side != "ask" and repo.get("mode") == "write"
+        if sends:
+            outbox(repo["path"])
         p = subprocess.Popen(cmd, cwd=Path(repo["path"]).expanduser(),
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if not side:
@@ -465,6 +509,8 @@ def ask(chat, name, repo, jobs, side=None):
                 post("sendMessage", x, True, chat_id=chat)
             if heard and p.returncode == 0 and chat not in state["voice_off"]:
                 threading.Thread(target=send_voice, args=(chat, part, job[2]), daemon=True).start()
+        if sends:
+            send_outbox(chat, repo["path"], reply_to)
     except Exception as e:
         traceback.print_exc()
         try:

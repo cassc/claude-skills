@@ -64,6 +64,7 @@ To add more repos later, run the skill in that repo or edit the config. The bot 
 | any other text | Sent to Claude in the current repo |
 | a photo, file or album | Saved in `<repo>/telegram-resources/` and sent to Claude. The caption is the question |
 | a voice note or audio | Transcribed (the bot replies "Heard: ..."); the text goes to Claude, and the answer also comes back as a voice note |
+| (write mode) Claude makes a file | Claude saves it in `<repo>/telegram-resources/out/`; the bot sends it after the reply (audio, voice, video, photo or document) and deletes it |
 | `/voice on\|off` | Voice replies to voice messages (default on) |
 
 Messages sent while a task runs (or while the PC is off) are queued and go to Claude as one call; each answer replies to its own message. `/new`, `/repo`, `/fork`, `/restore` and `/compact` wait their turn in the queue, so the order stays.
@@ -98,5 +99,5 @@ Logs: `journalctl --user -u tg-claude-bot -n 50`
 
 - Messages from ids not listed in `users` are ignored.
 - The token is only in the config file (`chmod 600`), outside every repo.
-- Files you send are saved in `<repo>/telegram-resources/` with a random name and mode `600` (not executable). The bot refuses to write if that folder is a symbolic link. Git ignores the folder through `.git/info/exclude`. The bot never deletes these files; clean the folder by hand. Max 20 MB per file.
+- Files you send are saved in `<repo>/telegram-resources/` with a random name and mode `600` (not executable). The bot refuses to write if that folder is a symbolic link. Git ignores the folder through `.git/info/exclude`. The bot never deletes these files; clean the folder by hand. Files in `out/` are the exception: they are deleted once sent. Max 50 MB to send. Max 20 MB per file.
 - `write` mode means anyone in `users` can run any command on this machine as you. Keep the list short, and keep your Telegram account safe (2FA).
