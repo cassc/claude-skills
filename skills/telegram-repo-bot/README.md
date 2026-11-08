@@ -66,6 +66,8 @@ To add more repos later, run the skill in that repo or edit the config. The bot 
 | a voice note or audio | Transcribed (the bot replies "Heard: ..."); the text goes to Claude, and the answer also comes back as a voice note |
 | `/voice on\|off` | Voice replies to voice messages (default on) |
 
+Messages sent while a task runs (or while the PC is off) are queued and go to Claude as one call; each answer replies to its own message. `/new`, `/repo`, `/fork`, `/restore` and `/compact` wait their turn in the queue, so the order stays.
+
 Voice runs on local models in its own venv (the bot itself stays stdlib-only). `voice.py` is the client; it starts `voice_server.py` on demand, which keeps Qwen3-ASR-0.6B (speech to text) and VoxCPM2 (text to audio) on the GPU and exits after 10 idle minutes so the GPU can sleep. Both fit in 8 GB VRAM only just; the timing aligner runs on the CPU. Install (several GB):
 ```
 uv venv --python 3.12 ~/.local/share/tg-voice/venv
