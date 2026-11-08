@@ -41,13 +41,13 @@ Config: `~/.config/tg-claude-bot/config.json` (chmod 600). The bot re-reads it o
 
 ## Voice messages (optional)
 
-Voice notes, audio files and round videos are transcribed; the bot replies "Heard: ..." and sends the text (plus any caption) to Claude. Claude's answer comes back as text and also as a voice note (`/voice off` to stop that per chat). Voice runs on local models in its own venv (the bot itself stays stdlib-only). `voice.py` is the client; it starts `voice_server.py` on demand, which keeps Qwen3-ASR-0.6B (speech to text) and VoxCPM2 (text to audio) on the GPU and exits after 10 idle minutes so the GPU can sleep. Both fit in 8 GB VRAM only just; the timing aligner runs on the CPU. Install (several GB, confirm with the user first):
+Voice notes, audio files and round videos are transcribed; the bot replies "Heard: ..." and sends the text (plus any caption) to Claude. Claude's answer comes back as text and also as a voice note (`/voice off` to stop that per chat). Voice runs on local models in its own venv (the bot itself stays stdlib-only). `voice.py` is the client; it starts `voice_server.py` on demand, which runs Qwen3-ASR-1.7B (speech to text) and VoxCPM2 (text to audio) on the GPU and exits after 10 idle minutes so the GPU can sleep. They do not fit in 8 GB VRAM together, so the idle one waits in RAM and they swap in about 2 s; the timing aligner runs on the CPU. Install (several GB, confirm with the user first):
 ```
 uv venv --python 3.12 ~/.local/share/tg-voice/venv
 uv pip install --python ~/.local/share/tg-voice/venv/bin/python qwen-asr voxcpm
 ```
-Models (about 6 GB) download on first use. If the GPU server fails, speech to text falls back to faster-whisper on the CPU (`transcribe.py`, venv `~/.local/share/tg-claude-bot/venv`: `faster-whisper 'av<16'`) and the text starts with "(CPU whisper)". Env: `TG_VOICE_ASR`, `TG_VOICE_TTS`, `TG_VOICE_STEPS` (default 10; 5 is faster), `TG_VOICE_IDLE` (seconds), `TG_VOICE_PORT` (8771). Log: `~/.local/state/tg-voice.log`.
-Config: `"pause_min"` (seconds, default 0.7) marks silences as `[pause 1.4s]`; `"asr_prompt"` lists words to expect (names, tickers); `"voice_limit"` (default 600) is the most characters spoken, the rest stays text only; `"whisper_model"` is for the CPU fallback (default `small`). The ai-quant bot uses the same `voice.py`.
+Models (about 9 GB) download on first use. If the GPU server fails, speech to text falls back to faster-whisper on the CPU (`transcribe.py`, venv `~/.local/share/tg-claude-bot/venv`: `faster-whisper 'av<16'`) and the text starts with "(CPU whisper)". Env: `TG_VOICE_ASR`, `TG_VOICE_TTS`, `TG_VOICE_STEPS` (default 10; 5 is faster), `TG_VOICE_IDLE` (seconds), `TG_VOICE_PORT` (8771). Log: `~/.local/state/tg-voice.log`.
+Config: `"pause_min"` (seconds, default 0.7) marks silences as `[pause 1.4s]`; `"asr_prompt"` lists words to expect (names, tickers), at the top level and/or per repo (joined); transcripts reach Claude marked "may have errors"; `"voice_limit"` (default 600) is the most characters spoken, the rest stays text only; `"whisper_model"` is for the CPU fallback (default `small`). The ai-quant bot uses the same `voice.py`.
 
 ## Other changes
 Edit the config: remove a repo, change `mode`, add or remove a user id. No restart needed.

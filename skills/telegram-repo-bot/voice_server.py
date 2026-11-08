@@ -1,7 +1,8 @@
 """Local voice server, run by the tg-voice venv: voice_server.py PORT IDLE_SECONDS.
-Qwen3-ASR (speech to text) and VoxCPM2 (text to audio) on the GPU. voice.py starts it on demand;
+Qwen3-ASR-1.7B (speech to text) and VoxCPM2 (text to audio) on the GPU, one at a time: both do not fit in 8 GB, so the idle one waits in RAM (a swap takes about 2 s). voice.py starts it on demand;
 it exits after IDLE_SECONDS without work, so the GPU can sleep again.
 POST /asr?pause=0.7&context=... (audio bytes) -> {"text"}. POST /tts (UTF-8 text) -> audio/ogg."""
+import gc
 import json
 import os
 import re
@@ -20,7 +21,7 @@ import soundfile as sf
 import torch
 
 PORT, IDLE = int(sys.argv[1]), float(sys.argv[2])
-ASR = os.environ.get("TG_VOICE_ASR", "Qwen/Qwen3-ASR-0.6B")
+ASR = os.environ.get("TG_VOICE_ASR", "Qwen/Qwen3-ASR-1.7B")
 TTS = os.environ.get("TG_VOICE_TTS", "openbmb/VoxCPM2")
 STEPS = int(os.environ.get("TG_VOICE_STEPS", "10"))
 gpu = threading.Lock()  # one job at a time on the GPU
@@ -28,9 +29,21 @@ models = {}
 last = time.time()
 
 
+def net(kind):
+    """The torch module inside each wrapper: this is what moves between GPU and RAM."""
+    return models[kind].model if kind == "asr" else models[kind].tts_model
+
+
 def model(kind):
-    if kind not in models:
-        if kind == "asr":  # the aligner (pause marks) runs on the CPU: both GPU models only just fit in 8 GB
+    for k in models:
+        if k != kind and next(net(k).parameters()).is_cuda:
+            net(k).to("cpu")  # make room; much faster to bring back than a reload from disk
+            gc.collect()
+            torch.cuda.empty_cache()
+    if kind in models:
+        net(kind).to("cuda")
+    else:
+        if kind == "asr":  # the aligner (pause marks) runs on the CPU
             from qwen_asr import Qwen3ASRModel
             models[kind] = Qwen3ASRModel.from_pretrained(ASR, dtype=torch.bfloat16, device_map="cuda:0",
                                                          forced_aligner="Qwen/Qwen3-ForcedAligner-0.6B",
