@@ -65,18 +65,25 @@ state.setdefault("voice_off", [])  # chats that want no voice replies
 state.setdefault("topics", {})  # chat -> {repo: message_thread_id}, used when the bot has topic mode on
 state.setdefault("fork", [])  # chat:repo keys whose next message runs in a copy of the session
 state_lock = threading.Lock()
-running = {}  # chat id -> Popen (None while starting)
-queue = {}  # chat id -> jobs waiting for the running one: (text, files, reply_to, chat), or a command to run in order
-bg = {}  # chat id -> Popens of running /bg tasks
-cancelled = set()  # chats where /cancel came before claude started
+# The four below are keyed by qk(chat) = (chat id, topic), so each topic has its own queue.
+running = {}  # key -> Popen (None while starting)
+queue = {}  # key -> jobs waiting for the running one: (text, files, reply_to), or a command to run in order
+bg = {}  # key -> Popens of running /bg tasks
+cancelled = set()  # keys where /cancel came before claude started
+session_locks = {}  # chat:repo -> Lock, so a topic and the chat outside topics never run the same session at once
+voice_lock = threading.Lock()  # one voice job at a time: the models share one GPU
 albums = {}  # media_group_id -> (messages, Timer)
 lock = threading.Lock()  # album timers run outside the poll thread
 TOPICS = False  # the bot has topic mode on in private chats (set at start)
 
 
 class Chat(int):
-    """A chat id that also knows the topic of the message. Equal to the plain id, so there is one queue per chat."""
+    """A chat id that also knows the topic of the message. Equal to the plain id."""
     thread = None
+
+
+def qk(chat):
+    return int(chat), getattr(chat, "thread", None)
 
 
 def thread(chat):
@@ -245,9 +252,10 @@ def transcribe(path, c, repo):
     """Speech to text with voice.py: local GPU models, CPU whisper as fallback. The bot stays stdlib-only.
     Context words: the global "asr_prompt" plus the repo's own."""
     ctx = ", ".join(filter(None, [c.get("asr_prompt"), repo.get("asr_prompt")]))
-    r = subprocess.run([sys.executable, str(VOICE), "asr", str(path), "--pause", str(c.get("pause_min", 0.7)),
-                        "--context", ctx, "--whisper", c.get("whisper_model", "small")],
-                       capture_output=True, text=True, timeout=1000)
+    with voice_lock:
+        r = subprocess.run([sys.executable, str(VOICE), "asr", str(path), "--pause", str(c.get("pause_min", 0.7)),
+                            "--context", ctx, "--whisper", c.get("whisper_model", "small")],
+                           capture_output=True, text=True, timeout=1000)
     if r.returncode:
         raise RuntimeError(f"transcribe failed: {r.stderr.strip()[-300:]}")
     return r.stdout.strip() or "(no speech heard)"
@@ -298,8 +306,9 @@ def send_outbox(chat, repo, reply_to):
 def send_voice(chat, text, reply_to):
     """In a thread: speak a reply with voice.py (local GPU, can take a minute) and send it as a voice note."""
     try:
-        r = subprocess.run([sys.executable, str(VOICE), "tts", "-", "--limit", str(conf().get("voice_limit", 600))],
-                           input=text.encode(), capture_output=True, timeout=1000)
+        with voice_lock:
+            r = subprocess.run([sys.executable, str(VOICE), "tts", "-", "--limit", str(conf().get("voice_limit", 600))],
+                               input=text.encode(), capture_output=True, timeout=1000)
         if r.returncode or not r.stdout:
             raise RuntimeError(r.stderr.decode().strip()[-300:] or "no audio")
         upload(chat, reply_to, "sendVoice", "voice", "reply.ogg", r.stdout, "audio/ogg")
@@ -475,10 +484,12 @@ def ask(chat, name, repo, jobs, side=None):
     """Runs in a thread, so commands like /cancel keep working. Side jobs do not block the chat and save nothing.
     side "ask": read-only, no chat history, not stopped by /cancel. "bg": repo mode, a copy of the chat.
     jobs: [(text, files, reply_to)]. Several go to Claude in one call; each answer replies to its own message."""
-    key = f"{chat}:{name}"
+    key, k = f"{chat}:{name}", qk(chat)
     t = time.time()
+    if not side:
+        session_locks.setdefault(key, threading.Lock()).acquire()
     try:
-        msgs = [prep(chat, repo, *j[:3]) for j in jobs]
+        msgs = [prep(chat, repo, *j) for j in jobs]
         text = msgs[0][0] if len(msgs) == 1 else BATCH.format(n=len(msgs)) + "".join(
             f"\n\n--- Message {i} ---\n{x}" for i, (x, _) in enumerate(msgs, 1))
         reply_to = jobs[0][2]
@@ -495,12 +506,12 @@ def ask(chat, name, repo, jobs, side=None):
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if not side:
             with lock:
-                running[chat] = p
-                if chat in cancelled:
+                running[k] = p
+                if k in cancelled:
                     p.kill()
         elif side == "bg":
             with lock:
-                bg.setdefault(chat, set()).add(p)
+                bg.setdefault(k, set()).add(p)
         try:
             out, err = p.communicate(text, timeout=conf().get("timeout", 1800))
         except subprocess.TimeoutExpired:
@@ -508,7 +519,7 @@ def ask(chat, name, repo, jobs, side=None):
             p.communicate()
             out, err = None, "timed out"
         with lock:
-            bg.get(chat, set()).discard(p)
+            bg.get(k, set()).discard(p)
         note = ""
         if p.returncode < 0:
             ans = "Stopped." if out is not None else "Timed out."
@@ -552,34 +563,37 @@ def ask(chat, name, repo, jobs, side=None):
             send(chat, f"Failed: {e}"[:4000])
         except Exception:
             pass
+    finally:
+        if not side:
+            session_locks[key].release()
 
 
 def work(chat, job):
-    """Run a job, then the queued ones. The chat stays busy until the queue is empty.
-    Waiting messages from the same topic go to Claude as one call, up to the next command or /compact."""
+    """Run a job, then the queued ones. The topic (or the chat outside topics) stays busy until its queue is empty.
+    Waiting messages go to Claude as one call, up to the next command or /compact."""
+    k = qk(chat)
     time.sleep(1)  # a backlog from one getUpdates is queued within ms; let it join the first call
     while job:
         if callable(job):
             job()
         else:
-            jobs, where = [job], job[3]
+            jobs = [job]
             with lock:
-                q = queue.get(chat, [])
-                while (not job[0].startswith("/compact") and q and not callable(q[0]) and not q[0][0].startswith("/compact")
-                       and q[0][3].thread == where.thread):
+                q = queue.get(k, [])
+                while not job[0].startswith("/compact") and q and not callable(q[0]) and not q[0][0].startswith("/compact"):
                     jobs.append(q.pop(0))
             c = conf()
-            if name := current(where, c):
-                ask(where, name, c["repos"][name], jobs)
+            if name := current(chat, c):
+                ask(chat, name, c["repos"][name], jobs)
             else:
-                send(where, "Pick a repo first:", jobs[-1][2], repo_buttons(c, name))
+                send(chat, "Pick a repo first:", jobs[-1][2], repo_buttons(c, name))
         with lock:
-            cancelled.discard(chat)
-            job = queue[chat].pop(0) if queue.get(chat) else None
+            cancelled.discard(k)
+            job = queue[k].pop(0) if queue.get(k) else None
             if job:
-                running[chat] = None
+                running[k] = None
             else:
-                running.pop(chat, None)
+                running.pop(k, None)
 
 
 def repo_buttons(c, cur):
@@ -598,11 +612,12 @@ def switch(chat, c, name):
 def defer(chat, fn, reply_to=None):
     """Commands that change the chat run after the running job and the queue, so the order stays.
     Returns the waiting count, 0 if it ran now."""
+    k = qk(chat)
     with lock:
-        busy = chat in running
+        busy = k in running
         if busy:
-            queue.setdefault(chat, []).append(fn)
-        n = len(queue[chat]) if busy else 0
+            queue.setdefault(k, []).append(fn)
+        n = len(queue[k]) if busy else 0
     if not n:
         fn()
     elif reply_to:
@@ -661,7 +676,7 @@ def on_message(m, files=None):
     text = (m.get("text") or m.get("caption") or "").strip()
     cmd, _, arg = text.partition(" ")
     cmd = cmd.split("@")[0].lower()
-    name = current(chat, c)
+    name, k = current(chat, c), qk(chat)
     if cmd in ("/repos", "/repo") and topic_repo(chat, c):
         send(chat, f"This topic is fixed to {name}. Use another topic, or the chat outside topics.")
     elif cmd == "/repos":
@@ -673,18 +688,18 @@ def on_message(m, files=None):
             send(chat, "Use: /repo <name>")
     elif cmd == "/status":
         mode = c["repos"][name].get("mode", "read") if name else "-"
-        n = len(queue.get(chat, []))
-        send(chat, f"Repo: {name or 'none'} ({mode}). {'Busy.' if chat in running else 'Idle.'}"
-             + f" {n} queued." * bool(n) + f" {len(bg.get(chat, ()))} in background." * bool(bg.get(chat)))
+        n = len(queue.get(k, []))
+        send(chat, f"Repo: {name or 'none'} ({mode}). {'Busy.' if k in running else 'Idle.'}"
+             + f" {n} queued." * bool(n) + f" {len(bg.get(k, ()))} in background." * bool(bg.get(k)))
     elif cmd == "/new":
         defer(chat, lambda: new_chat(chat), m["message_id"])
     elif cmd == "/cancel":
         with lock:
-            busy, p = chat in running, running.get(chat)
-            n = len(queue.pop(chat, []))
-            jobs = bg.pop(chat, set())
+            busy, p = k in running, running.get(k)
+            n = len(queue.pop(k, []))
+            jobs = bg.pop(k, set())
             if busy:
-                cancelled.add(chat)
+                cancelled.add(k)
         for x in [p, *jobs]:
             if x:
                 x.kill()
@@ -735,14 +750,14 @@ def on_message(m, files=None):
         if cmd == "/compact":
             text, files = f"/compact {arg.strip()}".strip(), []  # Claude Code runs it and returns an empty result
         speech = any(f["kind"] in SPEECH for f in files)
-        job = (text or ("" if speech else "Look at these files."), files, m["message_id"], chat)
+        job = (text or ("" if speech else "Look at these files."), files, m["message_id"])
         with lock:
-            busy = chat in running
+            busy = k in running
             if busy:
-                queue.setdefault(chat, []).append(job)
-                n = len(queue[chat])
+                queue.setdefault(k, []).append(job)
+                n = len(queue[k])
             else:
-                running[chat] = None
+                running[k] = None
         if busy:
             return send(chat, f"Queued ({n} waiting).", m["message_id"])
         threading.Thread(target=work, args=(chat, job), daemon=True).start()
