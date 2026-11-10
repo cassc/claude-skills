@@ -429,7 +429,8 @@ def restore(chat, c, q):
 
 def claude_cmd(repo, session, fork=False):
     mode = "write" if repo.get("mode") == "write" else "read"
-    cmd = ["claude", "-p", "--output-format", "json", "--append-system-prompt", PROMPTS[mode]]
+    cmd = ["claude", "-p", "--output-format", "json", "--model", "claude-opus-5-5", "--effort", "medium",
+           "--append-system-prompt", PROMPTS[mode]]
     if mode == "write":
         cmd += ["--permission-mode", "bypassPermissions"]
     else:  # dontAsk: any tool not allowed below is denied
