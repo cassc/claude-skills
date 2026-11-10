@@ -19,7 +19,7 @@ HERE = Path(__file__).parent
 PY = Path(os.environ.get("TG_VOICE_PY", "~/.local/share/tg-voice/venv/bin/python")).expanduser()
 WHISPER = Path(os.environ.get("TG_CLAUDE_WHISPER", "~/.local/share/tg-claude-bot/venv/bin/python")).expanduser()
 PORT = int(os.environ.get("TG_VOICE_PORT", "8771"))
-IDLE = os.environ.get("TG_VOICE_IDLE", "600")  # seconds the server (and the GPU) stays up after the last job
+IDLE = os.environ.get("TG_VOICE_IDLE", "120")  # seconds the server (and the GPU) stays up after the last job
 LOG = Path("~/.local/state/tg-voice.log").expanduser()
 
 

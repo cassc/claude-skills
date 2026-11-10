@@ -62,14 +62,26 @@ VOICE = Path(__file__).with_name("voice.py")  # local speech to text and text to
 state = json.loads(STATE.read_text()) if STATE.exists() else {"offset": 0, "repo": {}, "session": {}}
 state.setdefault("checkpoints", {})  # chat:repo -> [{id, name, session, time}]
 state.setdefault("voice_off", [])  # chats that want no voice replies
+state.setdefault("topics", {})  # chat -> {repo: message_thread_id}, used when the bot has topic mode on
 state.setdefault("fork", [])  # chat:repo keys whose next message runs in a copy of the session
 state_lock = threading.Lock()
 running = {}  # chat id -> Popen (None while starting)
-queue = {}  # chat id -> jobs waiting for the running one: (text, files, reply_to), or a command to run in order
+queue = {}  # chat id -> jobs waiting for the running one: (text, files, reply_to, chat), or a command to run in order
 bg = {}  # chat id -> Popens of running /bg tasks
 cancelled = set()  # chats where /cancel came before claude started
 albums = {}  # media_group_id -> (messages, Timer)
 lock = threading.Lock()  # album timers run outside the poll thread
+TOPICS = False  # the bot has topic mode on in private chats (set at start)
+
+
+class Chat(int):
+    """A chat id that also knows the topic of the message. Equal to the plain id, so there is one queue per chat."""
+    thread = None
+
+
+def thread(chat):
+    t = getattr(chat, "thread", None)
+    return {"message_thread_id": t} if t else {}
 
 
 def conf():
@@ -166,6 +178,7 @@ def send(chat, text, reply_to=None, buttons=None):
     parts = [text[i:i + 4000] for i in range(0, len(text), 4000)] or ["(empty)"]
     for i, part in enumerate(parts):
         extra = {"reply_markup": {"inline_keyboard": buttons}} if buttons and i == len(parts) - 1 else {}
+        extra.update(thread(chat))
         if reply_to:
             extra.update(reply_to_message_id=reply_to, allow_sending_without_reply=True)
         mid = api("sendMessage", chat_id=chat, text=part, **extra)["message_id"]
@@ -242,7 +255,7 @@ def transcribe(path, c, repo):
 
 def upload(chat, reply_to, method, field, name, data, ctype):
     b = secrets.token_hex(16)
-    fields = {"chat_id": chat, **({"reply_to_message_id": reply_to, "allow_sending_without_reply": "true"} if reply_to else {})}
+    fields = {"chat_id": chat, **thread(chat), **({"reply_to_message_id": reply_to, "allow_sending_without_reply": "true"} if reply_to else {})}
     body = b"".join(f'--{b}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode() for k, v in fields.items())
     body += (f'--{b}\r\nContent-Disposition: form-data; name="{field}"; filename="{urllib.parse.quote(name)}"\r\n'
              f"Content-Type: {ctype}\r\n\r\n").encode() + data + f"\r\n--{b}--\r\n".encode()
@@ -295,8 +308,26 @@ def send_voice(chat, text, reply_to):
         send(chat, f"Voice reply failed: {e}"[:500], reply_to)
 
 
+def topic_repo(chat, c):
+    """The repo whose topic the message is in, or None."""
+    t = getattr(chat, "thread", None)
+    name = t and next((n for n, x in state["topics"].get(str(chat), {}).items() if x == t), None)
+    return name if name in c["repos"] else None
+
+
+def sync_topics(chat, c):
+    """Topic mode: make a topic for each repo that has none yet."""
+    have = state["topics"].setdefault(str(chat), {})
+    for n in c["repos"]:
+        if n not in have:
+            have[n] = api("createForumTopic", chat_id=chat, name=n)["message_thread_id"]
+            save()
+
+
 def current(chat, c):
-    """The chat's repo name, or the only repo if there is one. None if not set."""
+    """The repo of the message's topic, else the chat's repo, else the only repo. None if not set."""
+    if name := topic_repo(chat, c):
+        return name
     name = state["repo"].get(str(chat))
     if name not in c["repos"]:
         name = next(iter(c["repos"])) if len(c["repos"]) == 1 else None
@@ -376,6 +407,8 @@ def restore(chat, c, q):
         return f"No checkpoint '{q.strip()}'. Send /checkpoints all."
     if not alive(c, name, cp):
         return f"Checkpoint '{cp['name']}' ({cp['id']}) expired: its session or repo is gone. /delete {cp['id']} removes it."
+    if topic_repo(chat, c) not in (None, name):
+        return f"Checkpoint '{cp['name']}' ({cp['id']}) is in {name}. Send /restore in that topic."
     key = f"{chat}:{name}"
     state["repo"][str(chat)] = name
     state["session"][key] = cp["session"]
@@ -445,12 +478,14 @@ def ask(chat, name, repo, jobs, side=None):
     key = f"{chat}:{name}"
     t = time.time()
     try:
-        msgs = [prep(chat, repo, *j) for j in jobs]
+        msgs = [prep(chat, repo, *j[:3]) for j in jobs]
         text = msgs[0][0] if len(msgs) == 1 else BATCH.format(n=len(msgs)) + "".join(
             f"\n\n--- Message {i} ---\n{x}" for i, (x, _) in enumerate(msgs, 1))
         reply_to = jobs[0][2]
         tag = f"{name} {side}" if side else name
-        mid = send(chat, f"[{tag}] Working...", reply_to)
+        label = tag if topic_repo(chat, conf()) != name else side  # the topic already names the repo
+        label = f"[{label}]" if label else ""
+        mid = send(chat, f"{label} Working...".strip(), reply_to)
         cmd = (claude_cmd({**repo, "mode": "read"}, None) if side == "ask"
                else claude_cmd(repo, state["session"].get(key), side == "bg" or key in state["fork"]))
         sends = side != "ask" and repo.get("mode") == "write"
@@ -500,13 +535,13 @@ def ask(chat, name, repo, jobs, side=None):
         if not parts:
             parts, msgs, jobs = [ans], [(text, any(h for _, h in msgs))], jobs[:1]
         for i, (part, (_, heard), job) in enumerate(zip(parts, msgs, jobs)):
-            head, *rest = split_md(f"[{tag}]\n{part}" + note * (i == len(parts) - 1))
+            head, *rest = split_md(f"{label}\n{part}".strip() + note * (i == len(parts) - 1))
             if i:
-                post("sendMessage", head, True, chat_id=chat, reply_to_message_id=job[2], allow_sending_without_reply=True)
+                post("sendMessage", head, True, chat_id=chat, reply_to_message_id=job[2], allow_sending_without_reply=True, **thread(chat))
             else:
                 post("editMessageText", head, True, chat_id=chat, message_id=mid)
             for x in rest:
-                post("sendMessage", x, True, chat_id=chat)
+                post("sendMessage", x, True, chat_id=chat, **thread(chat))
             if heard and p.returncode == 0 and chat not in state["voice_off"]:
                 threading.Thread(target=send_voice, args=(chat, part, job[2]), daemon=True).start()
         if sends:
@@ -521,22 +556,23 @@ def ask(chat, name, repo, jobs, side=None):
 
 def work(chat, job):
     """Run a job, then the queued ones. The chat stays busy until the queue is empty.
-    Waiting messages go to Claude as one call, up to the next command or /compact."""
+    Waiting messages from the same topic go to Claude as one call, up to the next command or /compact."""
     time.sleep(1)  # a backlog from one getUpdates is queued within ms; let it join the first call
     while job:
         if callable(job):
             job()
         else:
-            jobs = [job]
+            jobs, where = [job], job[3]
             with lock:
                 q = queue.get(chat, [])
-                while not job[0].startswith("/compact") and q and not callable(q[0]) and not q[0][0].startswith("/compact"):
+                while (not job[0].startswith("/compact") and q and not callable(q[0]) and not q[0][0].startswith("/compact")
+                       and q[0][3].thread == where.thread):
                     jobs.append(q.pop(0))
             c = conf()
-            if name := current(chat, c):
-                ask(chat, name, c["repos"][name], jobs)
+            if name := current(where, c):
+                ask(where, name, c["repos"][name], jobs)
             else:
-                send(chat, "Pick a repo first:", jobs[-1][2], repo_buttons(c, name))
+                send(where, "Pick a repo first:", jobs[-1][2], repo_buttons(c, name))
         with lock:
             cancelled.discard(chat)
             job = queue[chat].pop(0) if queue.get(chat) else None
@@ -608,10 +644,16 @@ def flush_album(group):
 
 
 def on_message(m, files=None):
-    chat, c = m["chat"]["id"], conf()
+    chat, c = Chat(m["chat"]["id"]), conf()
+    chat.thread = m.get("message_thread_id") if m.get("is_topic_message") else None
     if m.get("from", {}).get("id") not in c["users"]:
         print(f"ignored user {m.get('from', {}).get('id')}", flush=True)
         return
+    if TOPICS and m["chat"]["type"] == "private":
+        try:
+            sync_topics(chat, c)
+        except Exception as e:
+            print(f"topic sync failed: {e}", flush=True)
     if files is None:
         files = [f] if (f := file_of(m)) else []
         if files and m.get("media_group_id"):
@@ -620,7 +662,9 @@ def on_message(m, files=None):
     cmd, _, arg = text.partition(" ")
     cmd = cmd.split("@")[0].lower()
     name = current(chat, c)
-    if cmd == "/repos":
+    if cmd in ("/repos", "/repo") and topic_repo(chat, c):
+        send(chat, f"This topic is fixed to {name}. Use another topic, or the chat outside topics.")
+    elif cmd == "/repos":
         send(chat, "Pick a repo:" if c["repos"] else "No repos in config.", buttons=repo_buttons(c, name))
     elif cmd == "/repo":
         if arg.strip():
@@ -691,7 +735,7 @@ def on_message(m, files=None):
         if cmd == "/compact":
             text, files = f"/compact {arg.strip()}".strip(), []  # Claude Code runs it and returns an empty result
         speech = any(f["kind"] in SPEECH for f in files)
-        job = (text or ("" if speech else "Look at these files."), files, m["message_id"])
+        job = (text or ("" if speech else "Look at these files."), files, m["message_id"], chat)
         with lock:
             busy = chat in running
             if busy:
@@ -709,7 +753,8 @@ def on_callback(cb):
     if cb["from"]["id"] not in c["users"]:
         return
     act, _, arg = cb.get("data", "").partition(":")
-    chat = cb["message"]["chat"]["id"]
+    chat = Chat(cb["message"]["chat"]["id"])
+    chat.thread = cb["message"].get("message_thread_id") if cb["message"].get("is_topic_message") else None
     if act == "show":  # a bot cannot scroll the chat; a reply to the message before the /fork lets the user jump there
         _, cp = find_checkpoint(chat, current(chat, c), arg)
         api("answerCallbackQuery", callback_query_id=cb["id"])
@@ -736,6 +781,13 @@ def main():
             print(f"  {n}: {r['path']} ({r.get('mode', 'read')}){'' if ok else '  MISSING'}")
         return
     api("setMyCommands", commands=[{"command": k, "description": v} for k, v in COMMANDS.items()])
+    global TOPICS
+    TOPICS = api("getMe").get("has_topics_enabled", False)
+    for u in conf()["users"] if TOPICS else []:
+        try:
+            sync_topics(u, conf())
+        except Exception as e:
+            print(f"topic sync failed for {u}: {e}", flush=True)
     print("bot started", flush=True)
     while True:
         try:
