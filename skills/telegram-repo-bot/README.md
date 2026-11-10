@@ -20,7 +20,7 @@ You need Python 3.8+ (standard library only) and a logged-in `claude` CLI.
 
 ## Set up
 
-1. Create a bot with [@BotFather](https://t.me/BotFather) (`/newbot`) and copy the token.
+1. Create a bot with [@BotFather](https://t.me/BotFather) (`/newbot`) and copy the token. Optional: turn on Threaded Mode for one topic per repo (see "One topic per repo" below).
 2. Get your numeric user id from [@userinfobot](https://t.me/userinfobot).
 3. Open Claude Code in a repo and run `/telegram-repo-bot`. Claude asks for the token, your user id and the mode. It writes the config and installs the systemd user service.
 4. Run `loginctl enable-linger $USER` so the bot keeps running after you log out.

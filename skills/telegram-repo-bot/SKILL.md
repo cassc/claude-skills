@@ -26,7 +26,7 @@ Config: `~/.config/tg-claude-bot/config.json` (chmod 600). The bot re-reads it o
 
 ## Add a repo (default action)
 1. If config exists, read it. Only ask for what is missing.
-2. First time only: ask for the bot token (from @BotFather `/newbot`) and the user's numeric id (from @userinfobot).
+2. First time only: ask for the bot token (from @BotFather `/newbot`) and the user's numeric id (from @userinfobot). Tell the user about Threaded Mode (one topic per repo, see below).
 3. Ask read or write for the current repo. Name = folder name unless the user gives one.
 4. Before the first `write` repo, warn once: anyone in `users` can then run any command on this machine as this user.
 5. Write/merge the config, keep other repos, `chmod 600`. Use the absolute repo path.
