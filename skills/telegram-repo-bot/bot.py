@@ -39,6 +39,12 @@ PROMPTS = {
              + f"To send files (audio, video, images, documents), save them in `{OUT}/` in this repo; "
                "the bot sends them after your reply and then deletes them. " + FORMAT,
 }
+HANDOFF = (" If the owner asks you to run a task in the background, in a subagent, or without blocking the chat, "
+           "do not do the task and do not use the Agent tool for it. Reply with one short line, and end the reply with "
+           "`[[bg: <the task>]]`, written so it stands alone. The bot then runs it in parallel in a copy of this chat, "
+           "replies when it is done, and tells you the result in your next turn.")
+BG_RE = re.compile(r"\[\[bg:(.*?)\]\]", re.S)
+BG_DONE = "Background tasks that finished since your last turn (they ran in a copy of this chat):\n\n"
 READ_TOOLS = ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Bash(ls:*)",
               *(f"Bash(git {c}:*)" for c in ("log", "show", "diff", "status", "blame", "branch"))]
 COMMANDS = {"repos": "List repos and switch", "repo": "Switch repo: /repo <name>", "status": "Current repo and mode",
@@ -63,6 +69,7 @@ state = json.loads(STATE.read_text()) if STATE.exists() else {"offset": 0, "repo
 state.setdefault("checkpoints", {})  # chat:repo -> [{id, name, session, time}]
 state.setdefault("voice_off", [])  # chats that want no voice replies
 state.setdefault("topics", {})  # chat -> {repo: message_thread_id}, used when the bot has topic mode on
+state.setdefault("notes", {})  # chat:repo -> results of finished /bg tasks, for the next main turn
 state.setdefault("fork", [])  # chat:repo keys whose next message runs in a copy of the session
 state_lock = threading.Lock()
 # The four below are keyed by qk(chat) = (chat id, topic), so each topic has its own queue.
@@ -427,10 +434,10 @@ def restore(chat, c, q):
     return f"Restored '{cp['name']}' ({cp['id']}) in {name}."
 
 
-def claude_cmd(repo, session, fork=False):
+def claude_cmd(repo, session, fork=False, main=False):
     mode = "write" if repo.get("mode") == "write" else "read"
     cmd = ["claude", "-p", "--output-format", "json", "--model", "claude-opus-5-5", "--effort", "medium",
-           "--append-system-prompt", PROMPTS[mode]]
+           "--append-system-prompt", PROMPTS[mode] + HANDOFF * main]
     if mode == "write":
         cmd += ["--permission-mode", "bypassPermissions"]
     else:  # dontAsk: any tool not allowed below is denied
@@ -489,17 +496,23 @@ def ask(chat, name, repo, jobs, side=None):
     t = time.time()
     if not side:
         session_locks.setdefault(key, threading.Lock()).acquire()
+    handoff = []
     try:
         msgs = [prep(chat, repo, *j) for j in jobs]
         text = msgs[0][0] if len(msgs) == 1 else BATCH.format(n=len(msgs)) + "".join(
             f"\n\n--- Message {i} ---\n{x}" for i, (x, _) in enumerate(msgs, 1))
+        if not side and not text.startswith("/compact"):
+            with lock:
+                done = state["notes"].pop(key, [])
+            if done:
+                text = BG_DONE + "\n\n".join(done) + "\n\n--- The owner's message ---\n" + text
         reply_to = jobs[0][2]
         tag = f"{name} {side}" if side else name
         label = tag if topic_repo(chat, conf()) != name else side  # the topic already names the repo
         label = f"[{label}]" if label else ""
         mid = send(chat, f"{label} Working...".strip(), reply_to)
         cmd = (claude_cmd({**repo, "mode": "read"}, None) if side == "ask"
-               else claude_cmd(repo, state["session"].get(key), side == "bg" or key in state["fork"]))
+               else claude_cmd(repo, state["session"].get(key), side == "bg" or key in state["fork"], not side))
         sends = side != "ask" and repo.get("mode") == "write"
         if sends:
             outbox(repo["path"])
@@ -528,6 +541,12 @@ def ask(chat, name, repo, jobs, side=None):
             try:
                 res = json.loads(out)
                 ans = res.get("result") or ("Compacted." if text.startswith("/compact") else "(no answer)")
+                if side == "bg":
+                    with lock:
+                        state["notes"].setdefault(key, []).append(f"Task: {jobs[0][0][:500]}\nResult: {ans[:2000]}")
+                elif not side:
+                    handoff = [x.strip() for x in BG_RE.findall(ans) if x.strip()]
+                    ans = BG_RE.sub("", ans).strip() or "Started in background."
                 if not side:
                     state["session"][key] = res["session_id"]
                     if key in state["fork"]:
@@ -558,6 +577,8 @@ def ask(chat, name, repo, jobs, side=None):
                 threading.Thread(target=send_voice, args=(chat, part, job[2]), daemon=True).start()
         if sends:
             send_outbox(chat, repo["path"], reply_to)
+        for task in handoff:
+            threading.Thread(target=ask, args=(chat, name, repo, [(task, [], reply_to)], "bg"), daemon=True).start()
     except Exception as e:
         traceback.print_exc()
         try:
